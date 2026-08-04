@@ -85,7 +85,7 @@ namespace AutoUploadQCGate
             public bool IsLegacyRecovered { get; set; }
             public UploadResultView Upload { get; set; }
         }
-        private readonly ObservableCollection<UploadResultView> _uploadResults = new ObservableCollection<UploadResultView>();
+        private ObservableCollection<UploadResultView> _uploadResults = new ObservableCollection<UploadResultView>();
         private ICollectionView _uploadResultsView;
         private DispatcherTimer _searchDebounceTimer;
         private DispatcherTimer _filterRefreshTimer;
@@ -113,9 +113,7 @@ namespace AutoUploadQCGate
 
         private void InitializeFiltering()
         {
-            _uploadResultsView = CollectionViewSource.GetDefaultView(_uploadResults);
-            _uploadResultsView.Filter = FilterUploadResult;
-            DataList.ItemsSource = _uploadResultsView;
+            BindUploadResultsView();
 
             _searchDebounceTimer = new DispatcherTimer
             {
@@ -139,6 +137,13 @@ namespace AutoUploadQCGate
 
             RefreshFilteredView();
             UpdateApplicationStatus();
+        }
+
+        private void BindUploadResultsView()
+        {
+            _uploadResultsView = CollectionViewSource.GetDefaultView(_uploadResults);
+            _uploadResultsView.Filter = FilterUploadResult;
+            DataList.ItemsSource = _uploadResultsView;
         }
 
         private bool FilterUploadResult(object item)
@@ -211,16 +216,15 @@ namespace AutoUploadQCGate
             foreach (var existingResult in _uploadResults)
                 existingResult.PropertyChanged -= UploadResult_PropertyChanged;
 
-            using (_uploadResultsView.DeferRefresh())
+            var replacementResults = new ObservableCollection<UploadResultView>();
+            foreach (var result in results)
             {
-                _uploadResults.Clear();
-                foreach (var result in results)
-                {
-                    result.PropertyChanged += UploadResult_PropertyChanged;
-                    _uploadResults.Add(result);
-                }
+                result.PropertyChanged += UploadResult_PropertyChanged;
+                replacementResults.Add(result);
             }
 
+            _uploadResults = replacementResults;
+            BindUploadResultsView();
             RefreshFilteredView();
         }
 
