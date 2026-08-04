@@ -5,230 +5,363 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AutoUploadQCGate"
         mc:Ignorable="d"
-        Title="Auto Upload QC Gate" Height="600" Width="1000"
+        Title="Auto Upload QC Gate"
+        Height="720"
+        Width="1200"
+        MinHeight="560"
+        MinWidth="900"
         WindowStartupLocation="CenterScreen"
-        Background="#F5F5F5">
+        Background="#F3F6FA">
 
     <Window.Resources>
-        <!-- Style for buttons -->
-        <Style x:Key="ModernButton" TargetType="Button">
-            <Setter Property="Background" Value="#2196F3"/>
+        <Style x:Key="CardStyle" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#DDE4EC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="10"/>
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Background" Value="#1769E0"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="15,8"/>
+            <Setter Property="Padding" Value="18,9"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="MinHeight" Value="36"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#1976D2"/>
+                    <Setter Property="Background" Value="#1257BD"/>
                 </Trigger>
                 <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="#0D47A1"/>
+                    <Setter Property="Background" Value="#0D4599"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#B9C5D2"/>
+                    <Setter Property="Foreground" Value="#F4F6F8"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
 
-        <!-- Style for status indicators -->
-        <Style x:Key="StatusSuccess" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#4CAF50"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
+        <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+            <Setter Property="Background" Value="#EDF2F7"/>
+            <Setter Property="Foreground" Value="#334155"/>
+            <Setter Property="BorderBrush" Value="#CBD5E1"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#E2E8F0"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="#CBD5E1"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
-        <Style x:Key="StatusError" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#F44336"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
+        <Style x:Key="StartButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+            <Setter Property="Background" Value="#1F9D55"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#16833F"/></Trigger>
+                <Trigger Property="IsPressed" Value="True"><Setter Property="Background" Value="#106B32"/></Trigger>
+            </Style.Triggers>
         </Style>
 
-        <Style x:Key="StatusProcessing" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#FF9800"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
+        <Style x:Key="StopButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+            <Setter Property="Background" Value="#DC3545"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#C62828"/></Trigger>
+                <Trigger Property="IsPressed" Value="True"><Setter Property="Background" Value="#A51F1F"/></Trigger>
+            </Style.Triggers>
         </Style>
 
-        <!-- Style for judgement indicators -->
+        <Style x:Key="StatusTabStyle" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="#64748B"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="TabBorder"
+                                Background="#F1F5F9"
+                                BorderBrush="#E2E8F0"
+                                BorderThickness="1"
+                                CornerRadius="16"
+                                Padding="13,7">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="#E8EEF7"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="#E8F1FF"/>
+                                <Setter TargetName="TabBorder" Property="BorderBrush" Value="#1769E0"/>
+                                <Setter Property="Foreground" Value="#1257BD"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="FilterInputStyle" TargetType="Control">
+            <Setter Property="MinHeight" Value="36"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="BorderBrush" Value="#CBD5E1"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,5"/>
+        </Style>
+
         <Style x:Key="JudgementPass" TargetType="Border">
-            <Setter Property="Background" Value="#E8F5E8"/>
-            <Setter Property="BorderBrush" Value="#4CAF50"/>
+            <Setter Property="Background" Value="#EAF8EF"/>
+            <Setter Property="BorderBrush" Value="#75C68B"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Padding" Value="8,2"/>
         </Style>
-
         <Style x:Key="JudgementFail" TargetType="Border">
-            <Setter Property="Background" Value="#FFEBEE"/>
-            <Setter Property="BorderBrush" Value="#F44336"/>
+            <Setter Property="Background" Value="#FDECEC"/>
+            <Setter Property="BorderBrush" Value="#EF8D8D"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Padding" Value="8,2"/>
         </Style>
+        <Style x:Key="JudgementEmpty" TargetType="Border">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="8,2"/>
+        </Style>
 
-        <!-- Khai báo Converters trong Resources -->
+        <Style x:Key="StatusSuccess" TargetType="Border">
+            <Setter Property="Background" Value="#EAF8EF"/>
+            <Setter Property="BorderBrush" Value="#75C68B"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="11"/>
+            <Setter Property="Padding" Value="9,3"/>
+        </Style>
+        <Style x:Key="StatusError" TargetType="Border">
+            <Setter Property="Background" Value="#FDECEC"/>
+            <Setter Property="BorderBrush" Value="#EF8D8D"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="11"/>
+            <Setter Property="Padding" Value="9,3"/>
+        </Style>
+        <Style x:Key="StatusProcessing" TargetType="Border">
+            <Setter Property="Background" Value="#FFF5DE"/>
+            <Setter Property="BorderBrush" Value="#F3C567"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="11"/>
+            <Setter Property="Padding" Value="9,3"/>
+        </Style>
+        <Style x:Key="StatusPending" TargetType="Border">
+            <Setter Property="Background" Value="#EEF2F6"/>
+            <Setter Property="BorderBrush" Value="#C8D1DC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="11"/>
+            <Setter Property="Padding" Value="9,3"/>
+        </Style>
+
         <local:JudgementToStyleConverter x:Key="JudgementToStyleConverter"/>
         <local:JudgementToColorConverter x:Key="JudgementToColorConverter"/>
         <local:StatusToStyleConverter x:Key="StatusToStyleConverter"/>
+        <local:StatusToColorConverter x:Key="StatusToColorConverter"/>
     </Window.Resources>
 
-    <Grid Margin="15">
+    <Grid Margin="20">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Border Grid.Row="0" Background="White" CornerRadius="8" Padding="20,15" Margin="0,0,0,15" BorderThickness="1" BorderBrush="#E0E0E0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <Ellipse Width="40" Height="40" Fill="#2196F3"/>
-                    <TextBlock Text="Auto Upload QC Gate" FontSize="22" FontWeight="Bold" Foreground="#333333" Margin="15,0,0,0" VerticalAlignment="Center"/>
-                </StackPanel>
-
-                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="⚙️ Settings" Style="{StaticResource ModernButton}" Background="#607D8B"
-                         Click="SettingsButton_Click"/>
-                </StackPanel>
-            </Grid>
-        </Border>
-
-        <!-- Control Panel -->
-        <Border Grid.Row="1" Background="White" CornerRadius="8" Padding="15" Margin="0,0,0,15" BorderThickness="1" BorderBrush="#E0E0E0">
+        <Border Grid.Row="0" Style="{StaticResource CardStyle}" Padding="20,16" Margin="0,0,0,12">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Auto Upload QC Gate" FontSize="24" FontWeight="Bold" Foreground="#172033"/>
+                    <TextBlock Text="Monitor and manage automatic QC Gate uploads" Margin="0,4,0,0" Foreground="#64748B"/>
+                </StackPanel>
 
-                <!-- File Selection -->
+                <Border x:Name="appStatusBadge" Grid.Column="1" Background="#EEF2F6" CornerRadius="14" Padding="12,6" Margin="0,0,12,0" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse x:Name="appStatusDot" Width="8" Height="8" Fill="#94A3B8" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="txtAppStatus" Text="Stopped" FontWeight="SemiBold" Foreground="#475569"/>
+                    </StackPanel>
+                </Border>
 
-                <!-- Action Buttons -->
-                <Button x:Name="btnStartScan" Grid.Column="2" Content="▶️ Start Auto Upload" Style="{StaticResource ModernButton}" Background="#4CAF50" Margin="0,0,10,0" Click="btnStartScan_Click"/>
-                <Button x:Name="btnStopScan" Grid.Column="3" Content="⏹️ Stop" Style="{StaticResource ModernButton}" Background="#F44336" Click="btnStopScan_Click"/>
+                <Button Grid.Column="2" Content="Settings" Style="{StaticResource SecondaryButton}" Click="SettingsButton_Click"/>
             </Grid>
         </Border>
 
-        <!-- Data Grid -->
-        <Border Grid.Row="2" Background="White" CornerRadius="8" Margin="0,0,0,15" BorderThickness="1" BorderBrush="#E0E0E0">
+        <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="16,12" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Automatic upload service" FontWeight="SemiBold" Foreground="#1E293B"/>
+                    <TextBlock Text="Start or stop the background scan without changing the current filters." Margin="0,3,0,0" Foreground="#64748B"/>
+                </StackPanel>
+                <Button x:Name="btnStartScan" Grid.Column="1" Content="Start Auto Upload" Style="{StaticResource StartButton}" Margin="0,0,10,0" Click="btnStartScan_Click"/>
+                <Button x:Name="btnStopScan" Grid.Column="2" Content="Stop" Style="{StaticResource StopButton}" Click="btnStopScan_Click"/>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="16" Margin="0,0,0,12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,14">
+                    <RadioButton x:Name="tabAll" GroupName="StatusTabs" Tag="All" IsChecked="True" Style="{StaticResource StatusTabStyle}" Checked="StatusTab_Checked">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="All"/><TextBlock x:Name="txtAllCount" Text="0" Margin="7,0,0,0"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton GroupName="StatusTabs" Tag="Pending" Style="{StaticResource StatusTabStyle}" Checked="StatusTab_Checked">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="Pending"/><TextBlock x:Name="txtPendingCount" Text="0" Margin="7,0,0,0"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton GroupName="StatusTabs" Tag="Processing" Style="{StaticResource StatusTabStyle}" Checked="StatusTab_Checked">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="Processing"/><TextBlock x:Name="txtProcessingCount" Text="0" Margin="7,0,0,0"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton GroupName="StatusTabs" Tag="Success" Style="{StaticResource StatusTabStyle}" Checked="StatusTab_Checked">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="Success"/><TextBlock x:Name="txtSuccessCount" Text="0" Margin="7,0,0,0"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton GroupName="StatusTabs" Tag="Failed" Style="{StaticResource StatusTabStyle}" Checked="StatusTab_Checked">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="Failed"/><TextBlock x:Name="txtFailedCount" Text="0" Margin="7,0,0,0"/></StackPanel>
+                    </RadioButton>
+                </StackPanel>
+
+                <Grid Grid.Row="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" MinWidth="260"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                        <TextBlock Text="Search" FontSize="11" FontWeight="SemiBold" Foreground="#475569" Margin="0,0,0,5"/>
+                        <TextBox x:Name="txtSearch" Style="{StaticResource FilterInputStyle}" TextChanged="SearchTextBox_TextChanged" ToolTip="Search Combine Indication, Customer Code or Log"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Width="155" Margin="0,0,12,0">
+                        <TextBlock Text="From date" FontSize="11" FontWeight="SemiBold" Foreground="#475569" Margin="0,0,0,5"/>
+                        <DatePicker x:Name="dateFrom" Style="{StaticResource FilterInputStyle}" SelectedDateChanged="DateFilter_SelectedDateChanged"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Width="155" Margin="0,0,12,0">
+                        <TextBlock Text="To date" FontSize="11" FontWeight="SemiBold" Foreground="#475569" Margin="0,0,0,5"/>
+                        <DatePicker x:Name="dateTo" Style="{StaticResource FilterInputStyle}" SelectedDateChanged="DateFilter_SelectedDateChanged"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="3" VerticalAlignment="Bottom">
+                        <Button Content="Clear filters" Style="{StaticResource SecondaryButton}" Click="ClearFilters_Click"/>
+                    </StackPanel>
+
+                    <TextBlock x:Name="txtDateValidation" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="From date must be before To date." Foreground="#C62828" FontSize="11" Margin="0,5,0,0" Visibility="Collapsed"/>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="3" Style="{StaticResource CardStyle}" Margin="0,0,0,12" ClipToBounds="True">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- Grid Header -->
-                <Border Grid.Row="0" Background="#F8F9FA" BorderThickness="0,0,0,1" BorderBrush="#E0E0E0" CornerRadius="8,8,0,0">
+                <Border Grid.Row="0" Background="#F8FAFC" BorderThickness="0,0,0,1" BorderBrush="#DDE4EC" Padding="0,2">
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="1.5*"/>
-                            <ColumnDefinition Width="1.3*"/>
+                            <ColumnDefinition Width="1.6*"/>
+                            <ColumnDefinition Width="1.1*"/>
                             <ColumnDefinition Width="2.5*"/>
                             <ColumnDefinition Width="1*"/>
                             <ColumnDefinition Width="1*"/>
-                            <ColumnDefinition Width="1.3*"/>
+                            <ColumnDefinition Width="1.35*"/>
                         </Grid.ColumnDefinitions>
-
-                        <TextBlock Grid.Column="0" Text="Combine Indication" FontWeight="Bold" Foreground="#333333" Margin="15,12"/>
-                        <TextBlock Grid.Column="1" Text="Upload Quantity" FontWeight="Bold" Foreground="#333333" Margin="15,12,0,12" HorizontalAlignment="Left" Width="100"/>
-                        <TextBlock Grid.Column="2" Text="Log" FontWeight="Bold" Foreground="#333333" Margin="15,12"/>
-                        <TextBlock Grid.Column="3" Text="Judgement" FontWeight="Bold" Foreground="#333333" Margin="15,12"/>
-                        <TextBlock Grid.Column="4" Text="Status" FontWeight="Bold" Foreground="#333333" Margin="15,12"/>
-                        <TextBlock Grid.Column="5" Text="Uploaded At" FontWeight="Bold" Foreground="#333333" Margin="15,12"/>
+                        <TextBlock Grid.Column="0" Text="COMBINE INDICATION" FontSize="11" FontWeight="Bold" Foreground="#475569" Margin="16,11"/>
+                        <TextBlock Grid.Column="1" Text="UPLOAD QTY" FontSize="11" FontWeight="Bold" Foreground="#475569" Margin="12,11" HorizontalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" Text="LOG" FontSize="11" FontWeight="Bold" Foreground="#475569" Margin="12,11"/>
+                        <TextBlock Grid.Column="3" Text="JUDGEMENT" FontSize="11" FontWeight="Bold" Foreground="#475569" Margin="12,11" HorizontalAlignment="Center"/>
+                        <TextBlock Grid.Column="4" Text="STATUS" FontSize="11" FontWeight="Bold" Foreground="#475569" Margin="12,11" HorizontalAlignment="Center"/>
+                        <TextBlock Grid.Column="5" Text="UPLOADED AT" FontSize="11" FontWeight="Bold" Foreground="#475569" Margin="12,11"/>
                     </Grid>
                 </Border>
 
-                <!-- Data List (Virtualizing ItemsControl) -->
-                <ItemsControl x:Name="DataList" Grid.Row="1" Margin="0"
+                <ItemsControl x:Name="DataList" Grid.Row="1"
                               VirtualizingStackPanel.IsVirtualizing="True"
                               VirtualizingStackPanel.VirtualizationMode="Recycling"
                               ScrollViewer.CanContentScroll="True"
                               ScrollViewer.VerticalScrollBarVisibility="Auto">
                     <ItemsControl.Template>
                         <ControlTemplate TargetType="ItemsControl">
-                            <Border BorderThickness="{TemplateBinding BorderThickness}" 
-                                    BorderBrush="{TemplateBinding BorderBrush}" 
-                                    Background="{TemplateBinding Background}">
-                                <ScrollViewer Focusable="false" Padding="{TemplateBinding Padding}">
-                                    <ItemsPresenter />
-                                </ScrollViewer>
-                            </Border>
+                            <ScrollViewer Focusable="False" CanContentScroll="True">
+                                <ItemsPresenter/>
+                            </ScrollViewer>
                         </ControlTemplate>
                     </ItemsControl.Template>
                     <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <VirtualizingStackPanel />
-                        </ItemsPanelTemplate>
+                        <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border BorderThickness="0,0,0,1" BorderBrush="#F0F0F0" Padding="0">
+                            <Border BorderThickness="0,0,0,1" BorderBrush="#EDF1F5" Padding="0,2">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1.5*"/>
-                                        <ColumnDefinition Width="1.3*"/>
+                                        <ColumnDefinition Width="1.6*"/>
+                                        <ColumnDefinition Width="1.1*"/>
                                         <ColumnDefinition Width="2.5*"/>
                                         <ColumnDefinition Width="1*"/>
                                         <ColumnDefinition Width="1*"/>
-                                        <ColumnDefinition Width="1.3*"/>
+                                        <ColumnDefinition Width="1.35*"/>
                                     </Grid.ColumnDefinitions>
-
-                                    <!-- Combine Indication -->
-                                    <TextBlock Grid.Column="0" Text="{Binding CombineIndication}" Margin="15,10" VerticalAlignment="Center" Foreground="#333333"/>
-
-                                    <!-- Upload Quantity -->
-                                    <TextBlock Grid.Column="1" Text="{Binding UploadQuantity}" Margin="15,10" VerticalAlignment="Center" Foreground="#666666" HorizontalAlignment="Center"/>
-
-                                    <!-- Log -->
-                                    <TextBlock Grid.Column="2" Text="{Binding Log}" Margin="15,10" VerticalAlignment="Center" Foreground="#666666" TextWrapping="Wrap"/>
-
-                                    <!-- Judgement -->
-                                    <Border Grid.Column="3" Margin="10,5" VerticalAlignment="Center" HorizontalAlignment="Center"
-                                            Style="{Binding Judgement, Converter={StaticResource JudgementToStyleConverter}}">
-                                        <TextBlock Text="{Binding Judgement}" HorizontalAlignment="Center" VerticalAlignment="Center" 
-                                                   FontWeight="SemiBold" Foreground="{Binding Judgement, Converter={StaticResource JudgementToColorConverter}}"/>
+                                    <StackPanel Grid.Column="0" Margin="16,9">
+                                        <TextBlock Text="{Binding CombineIndication}" Foreground="#1E293B" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding CustomerCode}" Foreground="#94A3B8" FontSize="11" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding UploadQuantity, StringFormat=N0}" Margin="12,9" VerticalAlignment="Center" Foreground="#475569" HorizontalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Log}" Margin="12,9" VerticalAlignment="Center" Foreground="#64748B" TextWrapping="Wrap" MaxHeight="54" TextTrimming="CharacterEllipsis" ToolTip="{Binding Log}"/>
+                                    <Border Grid.Column="3" Margin="10,7" VerticalAlignment="Center" HorizontalAlignment="Center" Style="{Binding Judgement, Converter={StaticResource JudgementToStyleConverter}}">
+                                        <TextBlock Text="{Binding Judgement}" FontWeight="SemiBold" Foreground="{Binding Judgement, Converter={StaticResource JudgementToColorConverter}}"/>
                                     </Border>
-
-                                    <!-- Status -->
-                                    <TextBlock Grid.Column="4" Text="{Binding Status}" Margin="15,10" VerticalAlignment="Center" 
-                                               Style="{Binding Status, Converter={StaticResource StatusToStyleConverter}}"/>
-
-                                    <!-- Uploaded At -->
-                                    <TextBlock Grid.Column="5" Text="{Binding UploadedAt}" Margin="15,10" VerticalAlignment="Center" Foreground="#666666"/>
+                                    <Border Grid.Column="4" Margin="10,7" VerticalAlignment="Center" HorizontalAlignment="Center" Style="{Binding Status, Converter={StaticResource StatusToStyleConverter}}">
+                                        <TextBlock Text="{Binding Status}" FontWeight="SemiBold" Foreground="{Binding Status, Converter={StaticResource StatusToColorConverter}}"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="5" Text="{Binding UploadedAt}" Margin="12,9" VerticalAlignment="Center" Foreground="#64748B"/>
                                 </Grid>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <StackPanel x:Name="emptyState" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="False">
+                    <TextBlock Text="No upload records found" FontSize="17" FontWeight="SemiBold" Foreground="#475569" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Try changing or clearing the current filters." Margin="0,5,0,0" Foreground="#94A3B8" HorizontalAlignment="Center"/>
+                </StackPanel>
             </Grid>
         </Border>
 
-        <!-- Footer -->
-        <Border Grid.Row="3" Background="White" CornerRadius="8" Padding="15" BorderThickness="1" BorderBrush="#E0E0E0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <TextBlock Text="📈 Total Records:" Foreground="#666666" Margin="0,0,5,0"/>
-                    <TextBlock x:Name="txtTotalRecords" Text="0" FontWeight="SemiBold" Foreground="#333333" Margin="0,0,15,0"/>
-
-                    <TextBlock Text="✅ Successful:" Foreground="#666666" Margin="0,0,5,0"/>
-                    <TextBlock x:Name="txtOKRecords" Text="0" FontWeight="SemiBold" Foreground="#4CAF50" Margin="0,0,15,0"/>
-
-                    <TextBlock Text="❌ Failed:" Foreground="#666666" Margin="0,0,5,0"/>
-                    <TextBlock x:Name="txtNGRecords" Text="0" FontWeight="SemiBold" Foreground="#F44336" Margin="0,0,15,0"/>
-                </StackPanel>
-
-                <StackPanel Grid.Column="1" Orientation="Horizontal"/>
-            </Grid>
+        <Border Grid.Row="4" Style="{StaticResource CardStyle}" Padding="16,12">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Total records" Foreground="#64748B" VerticalAlignment="Center"/>
+                <TextBlock x:Name="txtTotalRecords" Text="0" FontWeight="Bold" FontSize="15" Foreground="#1E293B" Margin="7,0,24,0" VerticalAlignment="Center"/>
+                <TextBlock Text="Successful" Foreground="#64748B" VerticalAlignment="Center"/>
+                <TextBlock x:Name="txtOKRecords" Text="0" FontWeight="Bold" FontSize="15" Foreground="#16833F" Margin="7,0,24,0" VerticalAlignment="Center"/>
+                <TextBlock Text="Failed" Foreground="#64748B" VerticalAlignment="Center"/>
+                <TextBlock x:Name="txtNGRecords" Text="0" FontWeight="Bold" FontSize="15" Foreground="#C62828" Margin="7,0,0,0" VerticalAlignment="Center"/>
+            </StackPanel>
         </Border>
     </Grid>
 </Window>

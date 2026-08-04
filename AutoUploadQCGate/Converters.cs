@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Globalization;
+using AutoUploadQCGate.Models;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -11,13 +12,13 @@ namespace AutoUploadQCGate
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            if (value is string judgement)
-            {
-                return judgement?.ToLower() == "pass" ?
-                    Application.Current.FindResource("JudgementPass") :
-                    Application.Current.FindResource("JudgementFail");
-            }
-            return Application.Current.FindResource("JudgementFail");
+            var judgement = value as string;
+            if (string.Equals(judgement, "PASS", StringComparison.OrdinalIgnoreCase))
+                return Application.Current.FindResource("JudgementPass");
+            if (string.Equals(judgement, "FAIL", StringComparison.OrdinalIgnoreCase))
+                return Application.Current.FindResource("JudgementFail");
+
+            return Application.Current.FindResource("JudgementEmpty");
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -31,13 +32,13 @@ namespace AutoUploadQCGate
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            if (value is string judgement)
-            {
-                return judgement?.ToLower() == "pass" ?
-                    new SolidColorBrush(Color.FromRgb(76, 175, 80)) :
-                    new SolidColorBrush(Color.FromRgb(244, 67, 54));
-            }
-            return new SolidColorBrush(Color.FromRgb(244, 67, 54));
+            var judgement = value as string;
+            if (string.Equals(judgement, "PASS", StringComparison.OrdinalIgnoreCase))
+                return new SolidColorBrush(Color.FromRgb(22, 131, 63));
+            if (string.Equals(judgement, "FAIL", StringComparison.OrdinalIgnoreCase))
+                return new SolidColorBrush(Color.FromRgb(198, 40, 40));
+
+            return new SolidColorBrush(Color.FromRgb(148, 163, 184));
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -51,24 +52,42 @@ namespace AutoUploadQCGate
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            if (value is string status)
+            var status = UploadStatusNames.Normalize(value as string);
+            switch (status)
             {
-                switch (status?.ToLower())
-                {
-                    case "completed":
-                    case "success":
-                        return Application.Current.FindResource("StatusSuccess");
-                    case "failed":
-                    case "error":
-                        return Application.Current.FindResource("StatusError");
-                    case "processing":
-                    case "uploading":
-                        return Application.Current.FindResource("StatusProcessing");
-                    default:
-                        return null;
-                }
+                case UploadStatusNames.Success:
+                    return Application.Current.FindResource("StatusSuccess");
+                case UploadStatusNames.Failed:
+                    return Application.Current.FindResource("StatusError");
+                case UploadStatusNames.Processing:
+                    return Application.Current.FindResource("StatusProcessing");
+                default:
+                    return Application.Current.FindResource("StatusPending");
             }
-            return null;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    public class StatusToColorConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            var status = UploadStatusNames.Normalize(value as string);
+            switch (status)
+            {
+                case UploadStatusNames.Success:
+                    return new SolidColorBrush(Color.FromRgb(22, 131, 63));
+                case UploadStatusNames.Failed:
+                    return new SolidColorBrush(Color.FromRgb(198, 40, 40));
+                case UploadStatusNames.Processing:
+                    return new SolidColorBrush(Color.FromRgb(180, 115, 0));
+                default:
+                    return new SolidColorBrush(Color.FromRgb(71, 85, 105));
+            }
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

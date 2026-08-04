@@ -1,6 +1,7 @@
 using DefaultNS.Common;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Data;
 using System.Data.SqlClient;
 using System.IO;
@@ -21,6 +22,7 @@ using System.Xml.Serialization;
 using Renci.SshNet;
 using System.Collections.ObjectModel;
 using System.Security.Cryptography;
+using System.Windows.Threading;
 using AutoUploadQCGate.Models;
 using DefaultNS;
 using WinSCP;
@@ -83,7 +85,11 @@ namespace AutoUploadQCGate
             public bool IsLegacyRecovered { get; set; }
             public UploadResultView Upload { get; set; }
         }
-        private ObservableCollection<UploadResultView> _uploadResults = new ObservableCollection<UploadResultView>();
+        private readonly ObservableCollection<UploadResultView> _uploadResults = new ObservableCollection<UploadResultView>();
+        private ICollectionView _uploadResultsView;
+        private DispatcherTimer _searchDebounceTimer;
+        private DispatcherTimer _filterRefreshTimer;
+        private string _selectedStatus = UploadStatusNames.All;
         private AppSettings _appSetting = new AppSettings();
         private bool _isThreadProcess = false;
         private Task _scanTask;
@@ -98,11 +104,194 @@ namespace AutoUploadQCGate
         public MainWindow()
         {
             InitializeComponent();
+            InitializeFiltering();
             UpdateSetting();
             SQLiteHelper.EnsureSchema();
             InitializeScanThread();
-            DataList.ItemsSource = _uploadResults;
             Global.WriteLog($"Log phần mềm QC GATE");
+        }
+
+        private void InitializeFiltering()
+        {
+            _uploadResultsView = CollectionViewSource.GetDefaultView(_uploadResults);
+            _uploadResultsView.Filter = FilterUploadResult;
+            DataList.ItemsSource = _uploadResultsView;
+
+            _searchDebounceTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(300)
+            };
+            _searchDebounceTimer.Tick += (sender, args) =>
+            {
+                _searchDebounceTimer.Stop();
+                RefreshFilteredView();
+            };
+
+            _filterRefreshTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(75)
+            };
+            _filterRefreshTimer.Tick += (sender, args) =>
+            {
+                _filterRefreshTimer.Stop();
+                RefreshFilteredView();
+            };
+
+            RefreshFilteredView();
+            UpdateApplicationStatus();
+        }
+
+        private bool FilterUploadResult(object item)
+        {
+            var result = item as UploadResultView;
+            return result != null && MatchesNonStatusFilters(result) && MatchesSelectedStatus(result);
+        }
+
+        private bool MatchesNonStatusFilters(UploadResultView result)
+        {
+            var searchText = txtSearch == null ? string.Empty : txtSearch.Text.Trim();
+            var fromDate = dateFrom == null ? null : dateFrom.SelectedDate;
+            var toDate = dateTo == null ? null : dateTo.SelectedDate;
+            return UploadResultFilter.MatchesNonStatus(result, searchText, fromDate, toDate);
+        }
+
+        private bool MatchesSelectedStatus(UploadResultView result)
+        {
+            return UploadResultFilter.MatchesStatus(result, _selectedStatus);
+        }
+
+        private void RefreshFilteredView()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(RefreshFilteredView));
+                return;
+            }
+
+            if (_uploadResultsView == null)
+                return;
+
+            var hasInvalidDateRange = dateFrom.SelectedDate.HasValue && dateTo.SelectedDate.HasValue &&
+                                      dateFrom.SelectedDate.Value.Date > dateTo.SelectedDate.Value.Date;
+            txtDateValidation.Visibility = hasInvalidDateRange ? Visibility.Visible : Visibility.Collapsed;
+
+            _uploadResultsView.Refresh();
+
+            var nonStatusResults = _uploadResults.Where(MatchesNonStatusFilters).ToList();
+            txtAllCount.Text = nonStatusResults.Count.ToString("N0");
+            txtPendingCount.Text = nonStatusResults.Count(x => x.Status == UploadStatusNames.Pending).ToString("N0");
+            txtProcessingCount.Text = nonStatusResults.Count(x => x.Status == UploadStatusNames.Processing).ToString("N0");
+            txtSuccessCount.Text = nonStatusResults.Count(x => x.Status == UploadStatusNames.Success).ToString("N0");
+            txtFailedCount.Text = nonStatusResults.Count(x => x.Status == UploadStatusNames.Failed).ToString("N0");
+
+            var visibleResults = nonStatusResults.Where(MatchesSelectedStatus).ToList();
+            txtTotalRecords.Text = visibleResults.Count.ToString("N0");
+            txtOKRecords.Text = visibleResults.Count(x => x.Status == UploadStatusNames.Success).ToString("N0");
+            txtNGRecords.Text = visibleResults.Count(x => x.Status == UploadStatusNames.Failed).ToString("N0");
+            emptyState.Visibility = visibleResults.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void ScheduleFilterRefresh()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(ScheduleFilterRefresh));
+                return;
+            }
+
+            if (_filterRefreshTimer == null)
+                return;
+
+            _filterRefreshTimer.Stop();
+            _filterRefreshTimer.Start();
+        }
+
+        private void ReplaceUploadResults(IEnumerable<UploadResultView> results)
+        {
+            foreach (var existingResult in _uploadResults)
+                existingResult.PropertyChanged -= UploadResult_PropertyChanged;
+
+            using (_uploadResultsView.DeferRefresh())
+            {
+                _uploadResults.Clear();
+                foreach (var result in results)
+                {
+                    result.PropertyChanged += UploadResult_PropertyChanged;
+                    _uploadResults.Add(result);
+                }
+            }
+
+            RefreshFilteredView();
+        }
+
+        private void UploadResult_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(UploadResultView.Status) ||
+                e.PropertyName == nameof(UploadResultView.Judgement) ||
+                e.PropertyName == nameof(UploadResultView.UploadedAt) ||
+                e.PropertyName == nameof(UploadResultView.Log) ||
+                e.PropertyName == nameof(UploadResultView.CustomerCode) ||
+                e.PropertyName == nameof(UploadResultView.CombineIndication))
+                ScheduleFilterRefresh();
+        }
+
+        private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_searchDebounceTimer == null)
+                return;
+
+            _searchDebounceTimer.Stop();
+            _searchDebounceTimer.Start();
+        }
+
+        private void DateFilter_SelectedDateChanged(object sender, SelectionChangedEventArgs e)
+        {
+            ScheduleFilterRefresh();
+        }
+
+        private void StatusTab_Checked(object sender, RoutedEventArgs e)
+        {
+            var statusTab = sender as RadioButton;
+            if (statusTab != null)
+                _selectedStatus = statusTab.Tag as string ?? UploadStatusNames.All;
+
+            ScheduleFilterRefresh();
+        }
+
+        private void ClearFilters_Click(object sender, RoutedEventArgs e)
+        {
+            txtSearch.Clear();
+            dateFrom.SelectedDate = null;
+            dateTo.SelectedDate = null;
+            _selectedStatus = UploadStatusNames.All;
+            tabAll.IsChecked = true;
+            _searchDebounceTimer.Stop();
+            _filterRefreshTimer.Stop();
+            RefreshFilteredView();
+        }
+
+        private void UpdateApplicationStatus()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(UpdateApplicationStatus));
+                return;
+            }
+
+            if (_isThreadProcess)
+            {
+                txtAppStatus.Text = "Running";
+                txtAppStatus.Foreground = new SolidColorBrush(Color.FromRgb(22, 131, 63));
+                appStatusBadge.Background = new SolidColorBrush(Color.FromRgb(234, 248, 239));
+                appStatusDot.Fill = new SolidColorBrush(Color.FromRgb(31, 157, 85));
+            }
+            else
+            {
+                txtAppStatus.Text = "Stopped";
+                txtAppStatus.Foreground = new SolidColorBrush(Color.FromRgb(71, 85, 105));
+                appStatusBadge.Background = new SolidColorBrush(Color.FromRgb(238, 242, 246));
+                appStatusDot.Fill = new SolidColorBrush(Color.FromRgb(148, 163, 184));
+            }
         }
 
         private void InitializeScanThread()
@@ -614,16 +803,14 @@ WHERE pkid_server = @request_id;",
         {
             var queueTable = SQLiteHelper.ExecuteDataTable(
                 "SELECT * FROM dynamic_upload_data_queues ORDER BY updated_at DESC LIMIT 100000");
-
-            await Application.Current.Dispatcher.InvokeAsync(() =>
-            {
-                _uploadResults.Clear();
-            });
+            var loadedResults = new List<UploadResultView>();
 
             foreach (DataRow row in queueTable.Rows)
             {
                 int pkid = Conv.atoi32(row["pkid_server"]);
                 int pkidLocal = Conv.atoi32(row["pkid"]);
+                bool isUploaded = Conv.atob(row["is_uploaded"]);
+                string judgement = Conv.atos(row["judgement"]);
 
 
                 var result = new UploadResultView
@@ -637,7 +824,7 @@ WHERE pkid_server = @request_id;",
                     IsUseProxy = Conv.atob(row["is_use_proxy"]),
                     IsUseKey = Conv.atob(row["is_use_key"]),
                     IsReupload = Conv.atob(row["is_reupload"]),
-                    IsUploaded = Conv.atob(row["is_uploaded"]),
+                    IsUploaded = isUploaded,
                     FolderName = Conv.atos(row["folder_name"]),
                     CombineServerPath = Conv.atos(row["combine_server_path"]),
                     CombineLocalPath = Conv.atos(row["combine_local_path"]),
@@ -649,8 +836,8 @@ WHERE pkid_server = @request_id;",
                     SftpRemotePath = Conv.atos(row["sftp_remote_path"]),
 
                     Log = Conv.atos(row["logs"]),
-                    Judgement = Conv.atos(row["judgement"]),
-                    Status = Conv.atob(row["is_uploaded"]) ? "Uploaded" : "Pending",
+                    Judgement = judgement,
+                    Status = UploadStatusNames.FromPersistence(isUploaded, judgement),
                     UploadedAt = Conv.atos(row["uploaded_at"]),
                 };
 
@@ -673,11 +860,10 @@ WHERE pkid_server = @request_id;",
                 }
 
                 // Add vào UI
-                await Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    _uploadResults.Add(result);
-                });
+                loadedResults.Add(result);
             }
+
+            await Application.Current.Dispatcher.InvokeAsync(() => ReplaceUploadResults(loadedResults));
 
             await Task.Delay(200);
         }
@@ -1098,6 +1284,8 @@ WHERE pkid_server = @request_id;",
             {
                 int pkid = Conv.atoi32(row["pkid_server"]);
                 int pkidLocal = Conv.atoi32(row["pkid"]);
+                bool isUploaded = Conv.atob(row["is_uploaded"]);
+                string judgement = Conv.atos(row["judgement"]);
 
                 var result = new UploadResultView
                 {
@@ -1110,7 +1298,7 @@ WHERE pkid_server = @request_id;",
                     IsUseProxy = Conv.atob(row["is_use_proxy"]),
                     IsUseKey = Conv.atob(row["is_use_key"]),
                     IsReupload = Conv.atob(row["is_reupload"]),
-                    IsUploaded = Conv.atob(row["is_uploaded"]),
+                    IsUploaded = isUploaded,
                     FolderName = Conv.atos(row["folder_name"]),
                     CombineServerPath = Conv.atos(row["combine_server_path"]),
                     CombineLocalPath = Conv.atos(row["combine_local_path"]),
@@ -1122,8 +1310,8 @@ WHERE pkid_server = @request_id;",
                     SftpRemotePath = Conv.atos(row["sftp_remote_path"]),
 
                     Log = Conv.atos(row["logs"]),
-                    Judgement = Conv.atos(row["judgement"]),
-                    Status = Conv.atob(row["is_uploaded"]) ? "Uploaded" : "Pending",
+                    Judgement = judgement,
+                    Status = UploadStatusNames.FromPersistence(isUploaded, judgement),
                     UploadedAt = Conv.atos(row["uploaded_at"]),
                 };
 
@@ -1159,17 +1347,16 @@ WHERE pkid_server = @request_id;",
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     uiResult = _uploadResults.FirstOrDefault(x => x.Pkid == result.Pkid);
+                    if (uiResult != null)
+                    {
+                        uiResult.Status = UploadStatusNames.Processing;
+                        uiResult.Log = "";
+                        uiResult.Judgement = "";
+                        uiResult.UploadedAt = "";
+                    }
                 });
 
-                if (uiResult != null)
-                {
-                    uiResult.Status = "Processing";
-                    uiResult.Log = "";
-                    uiResult.Judgement = "";
-                    uiResult.UploadedAt = "";
-                }
-
-                result.Status = "Processing";
+                result.Status = UploadStatusNames.Processing;
                 result.Log = "";
                 result.Judgement = "";
                 result.UploadedAt = "";
@@ -1193,16 +1380,18 @@ WHERE pkid_server = @request_id;",
                         isSuccess = UploadByWinSCP(result, logBuilder);
                     }
 
-                    result.Status = isSuccess ? "Success" : "Error";
+                    result.Status = isSuccess ? UploadStatusNames.Success : UploadStatusNames.Failed;
                     result.Judgement = isSuccess ? "PASS" : "FAIL";
                     result.Log = logBuilder.ToString();
-                    result.UploadedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                    result.UploadedAt = isSuccess
+                        ? DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                        : string.Empty;
                 }
                 catch (Exception ex)
                 {
                     Global.WriteLog($"Upload failed: {ex.Message}");
 
-                    result.Status = "Error";
+                    result.Status = UploadStatusNames.Failed;
                     result.Judgement = "FAIL";
                     result.Log = $"Upload failed: {ex.Message}";
                     isSuccess = false;
@@ -1210,11 +1399,14 @@ WHERE pkid_server = @request_id;",
 
                 if (uiResult != null)
                 {
-                    uiResult.Status = result.Status;
-                    uiResult.Judgement = result.Judgement;
-                    uiResult.Log = result.Log;
-                    uiResult.UploadedAt = result.UploadedAt;
-                    uiResult.IsUploaded = isSuccess;
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        uiResult.Status = result.Status;
+                        uiResult.Judgement = result.Judgement;
+                        uiResult.Log = result.Log;
+                        uiResult.UploadedAt = result.UploadedAt;
+                        uiResult.IsUploaded = isSuccess;
+                    });
                 }
 
                 // =============================
@@ -1241,6 +1433,16 @@ WHERE pkid_server = @request_id;",
                     else
                     {
                         _numberOfNG++;
+                        string safeLog = EscapeSQLiteString(result.Log);
+                        string safeJudgement = EscapeSQLiteString(result.Judgement);
+
+                        sql += $@"
+                    UPDATE dynamic_upload_data_queues
+                    SET is_uploaded = 0,
+                        logs = '{safeLog}',
+                        judgement = '{safeJudgement}'
+                    WHERE pkid_server = {result.Pkid};
+                ";
                     }
 
                     _totalRecords = _numberOfOK + _numberOfNG;
@@ -1323,10 +1525,8 @@ WHERE pkid_server = @request_id;",
         {
             Dispatcher.Invoke(() =>
             {
-                txtTotalRecords.Text = _totalRecords.ToString();
-                txtOKRecords.Text = _numberOfOK.ToString();
-                txtNGRecords.Text = _numberOfNG.ToString();
-                DataList.ItemsSource = _uploadResults;
+                RefreshFilteredView();
+                UpdateApplicationStatus();
             });
         }
 
@@ -1418,6 +1618,8 @@ WHERE pkid_server = @request_id;",
                     btnStartScan.IsEnabled = true;
                     btnStopScan.IsEnabled = false;
                 }
+
+                UpdateApplicationStatus();
             });
         }
 
@@ -1430,6 +1632,7 @@ WHERE pkid_server = @request_id;",
                 btnStartScan.IsEnabled = false;
             }
 
+            UpdateApplicationStatus();
             UpdateUIWithProgress();
         }
 
@@ -1442,6 +1645,7 @@ WHERE pkid_server = @request_id;",
                 btnStartScan.IsEnabled = true;
             }
 
+            UpdateApplicationStatus();
             UpdateUIWithProgress();
         }
 

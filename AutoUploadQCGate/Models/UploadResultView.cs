@@ -1,10 +1,91 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using static AutoUploadQCGate.MainWindow;
 
 namespace AutoUploadQCGate.Models
 {
+    internal static class UploadStatusNames
+    {
+        public const string All = "All";
+        public const string Pending = "Pending";
+        public const string Processing = "Processing";
+        public const string Success = "Success";
+        public const string Failed = "Failed";
+
+        public static string FromPersistence(bool isUploaded, string judgement)
+        {
+            if (isUploaded)
+                return Success;
+
+            return string.Equals(judgement, "FAIL", StringComparison.OrdinalIgnoreCase)
+                ? Failed
+                : Pending;
+        }
+
+        public static string Normalize(string status)
+        {
+            if (string.Equals(status, Processing, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(status, "Uploading", StringComparison.OrdinalIgnoreCase))
+                return Processing;
+
+            if (string.Equals(status, Success, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(status, "Uploaded", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase))
+                return Success;
+
+            if (string.Equals(status, Failed, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(status, "Error", StringComparison.OrdinalIgnoreCase))
+                return Failed;
+
+            return Pending;
+        }
+    }
+
+    internal static class UploadResultFilter
+    {
+        public static bool MatchesNonStatus(UploadResultView result, string searchText,
+            DateTime? fromDate, DateTime? toDate)
+        {
+            searchText = (searchText ?? string.Empty).Trim();
+            if (!string.IsNullOrEmpty(searchText) &&
+                !ContainsIgnoreCase(result.CombineIndication, searchText) &&
+                !ContainsIgnoreCase(result.CustomerCode, searchText) &&
+                !ContainsIgnoreCase(result.Log, searchText))
+                return false;
+
+            if (fromDate.HasValue || toDate.HasValue)
+            {
+                if (fromDate.HasValue && toDate.HasValue && fromDate.Value.Date > toDate.Value.Date)
+                    return false;
+
+                if (!result.UploadedAtValue.HasValue)
+                    return false;
+
+                var uploadedDate = result.UploadedAtValue.Value.Date;
+                if (fromDate.HasValue && uploadedDate < fromDate.Value.Date)
+                    return false;
+                if (toDate.HasValue && uploadedDate > toDate.Value.Date)
+                    return false;
+            }
+
+            return true;
+        }
+
+        public static bool MatchesStatus(UploadResultView result, string selectedStatus)
+        {
+            return string.Equals(selectedStatus, UploadStatusNames.All, StringComparison.Ordinal) ||
+                   string.Equals(result.Status, selectedStatus, StringComparison.Ordinal);
+        }
+
+        private static bool ContainsIgnoreCase(string value, string searchText)
+        {
+            return !string.IsNullOrEmpty(value) &&
+                   value.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+    }
+
     public class UploadResultView : INotifyPropertyChanged
     {
         private int _pkid;
@@ -34,6 +115,7 @@ namespace AutoUploadQCGate.Models
         private string _judgement;
         private string _status;
         private string _uploadedAt;
+        private DateTime? _uploadedAtValue;
 
         public int PkidLocal
         {
@@ -159,13 +241,49 @@ namespace AutoUploadQCGate.Models
         public string Status
         {
             get => _status;
-            set { _status = value; OnPropertyChanged(nameof(Status)); }
+            set
+            {
+                var normalizedStatus = UploadStatusNames.Normalize(value);
+                if (_status == normalizedStatus)
+                    return;
+
+                _status = normalizedStatus;
+                OnPropertyChanged(nameof(Status));
+            }
         }
 
         public string UploadedAt
         {
             get => _uploadedAt;
-            set { _uploadedAt = value; OnPropertyChanged(nameof(UploadedAt)); }
+            set
+            {
+                if (_uploadedAt == value)
+                    return;
+
+                _uploadedAt = value;
+                _uploadedAtValue = ParseUploadedAt(value);
+                OnPropertyChanged(nameof(UploadedAt));
+                OnPropertyChanged(nameof(UploadedAtValue));
+            }
+        }
+
+        public DateTime? UploadedAtValue
+        {
+            get => _uploadedAtValue;
+        }
+
+        private static DateTime? ParseUploadedAt(string value)
+        {
+            DateTime uploadedAt;
+            if (DateTime.TryParseExact(value, "yyyy-MM-dd HH:mm:ss",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out uploadedAt))
+                return uploadedAt;
+
+            if (DateTime.TryParse(value, CultureInfo.CurrentCulture,
+                DateTimeStyles.None, out uploadedAt))
+                return uploadedAt;
+
+            return null;
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
