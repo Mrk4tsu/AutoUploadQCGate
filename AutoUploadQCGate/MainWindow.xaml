@@ -3,7 +3,6 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:AutoUploadQCGate"
         mc:Ignorable="d"
         Title="Auto Upload QC Gate"
         Height="720"
@@ -113,59 +112,66 @@
             <Setter Property="Padding" Value="10,5"/>
         </Style>
 
-        <Style x:Key="JudgementPass" TargetType="Border">
-            <Setter Property="Background" Value="#EAF8EF"/>
-            <Setter Property="BorderBrush" Value="#75C68B"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="10"/>
-            <Setter Property="Padding" Value="8,2"/>
-        </Style>
-        <Style x:Key="JudgementFail" TargetType="Border">
-            <Setter Property="Background" Value="#FDECEC"/>
-            <Setter Property="BorderBrush" Value="#EF8D8D"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="10"/>
-            <Setter Property="Padding" Value="8,2"/>
-        </Style>
-        <Style x:Key="JudgementEmpty" TargetType="Border">
+        <Style x:Key="JudgementBadgeStyle" TargetType="Border">
             <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Padding" Value="8,2"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Judgement}" Value="PASS">
+                    <Setter Property="Background" Value="#EAF8EF"/>
+                    <Setter Property="BorderBrush" Value="#75C68B"/>
+                    <Setter Property="BorderThickness" Value="1"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Judgement}" Value="FAIL">
+                    <Setter Property="Background" Value="#FDECEC"/>
+                    <Setter Property="BorderBrush" Value="#EF8D8D"/>
+                    <Setter Property="BorderThickness" Value="1"/>
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
 
-        <Style x:Key="StatusSuccess" TargetType="Border">
-            <Setter Property="Background" Value="#EAF8EF"/>
-            <Setter Property="BorderBrush" Value="#75C68B"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="11"/>
-            <Setter Property="Padding" Value="9,3"/>
+        <Style x:Key="JudgementTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#94A3B8"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Judgement}" Value="PASS"><Setter Property="Foreground" Value="#16833F"/></DataTrigger>
+                <DataTrigger Binding="{Binding Judgement}" Value="FAIL"><Setter Property="Foreground" Value="#C62828"/></DataTrigger>
+            </Style.Triggers>
         </Style>
-        <Style x:Key="StatusError" TargetType="Border">
-            <Setter Property="Background" Value="#FDECEC"/>
-            <Setter Property="BorderBrush" Value="#EF8D8D"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="11"/>
-            <Setter Property="Padding" Value="9,3"/>
-        </Style>
-        <Style x:Key="StatusProcessing" TargetType="Border">
-            <Setter Property="Background" Value="#FFF5DE"/>
-            <Setter Property="BorderBrush" Value="#F3C567"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="11"/>
-            <Setter Property="Padding" Value="9,3"/>
-        </Style>
-        <Style x:Key="StatusPending" TargetType="Border">
+
+        <Style x:Key="StatusBadgeStyle" TargetType="Border">
             <Setter Property="Background" Value="#EEF2F6"/>
             <Setter Property="BorderBrush" Value="#C8D1DC"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="11"/>
             <Setter Property="Padding" Value="9,3"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="Processing">
+                    <Setter Property="Background" Value="#FFF5DE"/>
+                    <Setter Property="BorderBrush" Value="#F3C567"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Success">
+                    <Setter Property="Background" Value="#EAF8EF"/>
+                    <Setter Property="BorderBrush" Value="#75C68B"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Failed">
+                    <Setter Property="Background" Value="#FDECEC"/>
+                    <Setter Property="BorderBrush" Value="#EF8D8D"/>
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
 
-        <local:JudgementToStyleConverter x:Key="JudgementToStyleConverter"/>
-        <local:JudgementToColorConverter x:Key="JudgementToColorConverter"/>
-        <local:StatusToStyleConverter x:Key="StatusToStyleConverter"/>
-        <local:StatusToColorConverter x:Key="StatusToColorConverter"/>
+        <Style x:Key="StatusTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#475569"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="Processing"><Setter Property="Foreground" Value="#B47300"/></DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Success"><Setter Property="Foreground" Value="#16833F"/></DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Failed"><Setter Property="Foreground" Value="#C62828"/></DataTrigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="20">
@@ -333,11 +339,11 @@
                                     </StackPanel>
                                     <TextBlock Grid.Column="1" Text="{Binding UploadQuantity, StringFormat=N0}" Margin="12,9" VerticalAlignment="Center" Foreground="#475569" HorizontalAlignment="Center"/>
                                     <TextBlock Grid.Column="2" Text="{Binding Log}" Margin="12,9" VerticalAlignment="Center" Foreground="#64748B" TextWrapping="Wrap" MaxHeight="54" TextTrimming="CharacterEllipsis" ToolTip="{Binding Log}"/>
-                                    <Border Grid.Column="3" Margin="10,7" VerticalAlignment="Center" HorizontalAlignment="Center" Style="{Binding Judgement, Converter={StaticResource JudgementToStyleConverter}}">
-                                        <TextBlock Text="{Binding Judgement}" FontWeight="SemiBold" Foreground="{Binding Judgement, Converter={StaticResource JudgementToColorConverter}}"/>
+                                    <Border Grid.Column="3" Margin="10,7" VerticalAlignment="Center" HorizontalAlignment="Center" Style="{StaticResource JudgementBadgeStyle}">
+                                        <TextBlock Text="{Binding Judgement}" Style="{StaticResource JudgementTextStyle}"/>
                                     </Border>
-                                    <Border Grid.Column="4" Margin="10,7" VerticalAlignment="Center" HorizontalAlignment="Center" Style="{Binding Status, Converter={StaticResource StatusToStyleConverter}}">
-                                        <TextBlock Text="{Binding Status}" FontWeight="SemiBold" Foreground="{Binding Status, Converter={StaticResource StatusToColorConverter}}"/>
+                                    <Border Grid.Column="4" Margin="10,7" VerticalAlignment="Center" HorizontalAlignment="Center" Style="{StaticResource StatusBadgeStyle}">
+                                        <TextBlock Text="{Binding Status}" Style="{StaticResource StatusTextStyle}"/>
                                     </Border>
                                     <TextBlock Grid.Column="5" Text="{Binding UploadedAt}" Margin="12,9" VerticalAlignment="Center" Foreground="#64748B"/>
                                 </Grid>

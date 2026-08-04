@@ -127,7 +127,6 @@
     <Compile Include="common\Global.cs" />
     <Compile Include="common\IniFile.cs" />
     <Compile Include="common\SQLFunc.cs" />
-    <Compile Include="Converters.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>

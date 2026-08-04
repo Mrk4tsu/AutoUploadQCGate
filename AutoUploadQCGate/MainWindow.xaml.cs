@@ -326,7 +326,7 @@ namespace AutoUploadQCGate
                 catch (Exception ex)
                 {
                     // Log lỗi và tiếp tục chạy
-                    LogError($"Scan process error: {ex.Message}");
+                    LogError($"Scan process error: {ex}");
                     await Task.Delay(5000, cancellationToken); // Chờ 5 giây trước khi thử lại
                 }
             }
@@ -353,6 +353,7 @@ namespace AutoUploadQCGate
             }
             catch (Exception ex)
             {
+                LogError($"Scan and upload cycle failed: {ex}");
                 UpdateUIWithProgress();
             }
         }
@@ -1518,6 +1519,7 @@ WHERE pkid_server = @request_id;",
 
         private void LogError(string message)
         {
+            Global.WriteLog(message);
             Dispatcher.Invoke(() =>
             {
                 // TODO: Thêm log vào UI hoặc file log
@@ -1602,6 +1604,7 @@ WHERE pkid_server = @request_id;",
             }
             catch (Exception ex)
             {
+                LogError($"Settings refresh failed: {ex}");
                 MessageBox.Show($"Error loading settings: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }

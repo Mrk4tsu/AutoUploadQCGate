@@ -235,7 +235,25 @@ namespace AutoUploadQCGate.Models
         public string Judgement
         {
             get => _judgement;
-            set { _judgement = value; OnPropertyChanged(nameof(Judgement)); }
+            set
+            {
+                var normalizedJudgement = NormalizeJudgement(value);
+                if (_judgement == normalizedJudgement)
+                    return;
+
+                _judgement = normalizedJudgement;
+                OnPropertyChanged(nameof(Judgement));
+            }
+        }
+
+        private static string NormalizeJudgement(string judgement)
+        {
+            if (string.Equals(judgement, "PASS", StringComparison.OrdinalIgnoreCase))
+                return "PASS";
+            if (string.Equals(judgement, "FAIL", StringComparison.OrdinalIgnoreCase))
+                return "FAIL";
+
+            return string.IsNullOrWhiteSpace(judgement) ? string.Empty : judgement.Trim();
         }
 
         public string Status

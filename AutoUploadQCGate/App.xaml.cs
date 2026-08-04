@@ -3,8 +3,10 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Forms;
+using System.Windows.Threading;
 using System.Xml.Serialization;
 
 namespace AutoUploadQCGate
@@ -12,6 +14,7 @@ namespace AutoUploadQCGate
     public partial class App : System.Windows.Application
     {
         private static Mutex _mutex;
+        private static bool _ownsMutex;
         private NotifyIcon _notifyIcon;
         private bool _isExit = false;
         private AppSettings _appSetting = new AppSettings();
@@ -34,6 +37,7 @@ namespace AutoUploadQCGate
             }
             catch (Exception ex)
             {
+                Global.WriteLog($"Settings load failed: {ex}");
                 System.Windows.MessageBox.Show($"Error loading settings: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
@@ -41,10 +45,14 @@ namespace AutoUploadQCGate
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+            DispatcherUnhandledException += OnDispatcherUnhandledException;
+            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+            TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
             LoadSetting();
             const string appName = "AutoUploadQCGate_SingleInstance";
             bool createdNew;
             _mutex = new Mutex(true, appName, out createdNew);
+            _ownsMutex = createdNew;
 
             if (!createdNew)
             {
@@ -81,6 +89,21 @@ namespace AutoUploadQCGate
                     _eventAttached = true;
                 }
             };
+        }
+
+        private static void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+        {
+            Global.WriteLog($"Unhandled UI exception: {e.Exception}");
+        }
+
+        private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            Global.WriteLog($"Unhandled application exception: {e.ExceptionObject}");
+        }
+
+        private static void OnUnobservedTaskException(object sender, UnobservedTaskExceptionEventArgs e)
+        {
+            Global.WriteLog($"Unobserved task exception: {e.Exception}");
         }
         private bool _eventAttached = false;
 
@@ -137,7 +160,12 @@ namespace AutoUploadQCGate
         protected override void OnExit(ExitEventArgs e)
         {
             _notifyIcon?.Dispose();
-            _mutex?.ReleaseMutex();
+            if (_ownsMutex)
+            {
+                _mutex?.ReleaseMutex();
+                _ownsMutex = false;
+            }
+            _mutex?.Dispose();
             base.OnExit(e);
         }
     }
