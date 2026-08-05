@@ -1,4 +1,4 @@
-﻿using DefaultNS.Common;
+using DefaultNS.Common;
 using System;
 using System.Drawing;
 using System.IO;
@@ -63,9 +63,31 @@ namespace AutoUploadQCGate
             }
 
             // Khởi tạo NotifyIcon
+            System.Drawing.Icon appIcon;
+            try
+            {
+                var streamInfo = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/_icon.ico"));
+                if (streamInfo != null)
+                {
+                    appIcon = new System.Drawing.Icon(streamInfo.Stream);
+                }
+                else if (System.IO.File.Exists("_icon.ico"))
+                {
+                    appIcon = new System.Drawing.Icon("_icon.ico");
+                }
+                else
+                {
+                    appIcon = System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                }
+            }
+            catch
+            {
+                appIcon = System.Drawing.SystemIcons.Application;
+            }
+
             _notifyIcon = new NotifyIcon
             {
-                Icon = new Icon("_icon.ico"),
+                Icon = appIcon,
                 Visible = true,
                 Text = "AutoUploadQCGate"
             };

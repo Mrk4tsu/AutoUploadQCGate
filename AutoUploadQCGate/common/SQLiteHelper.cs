@@ -28,7 +28,7 @@ namespace DefaultNS
         public static string GetConnectionString()
         {
             string dbFile = GetDbFilePath();
-            return $"Data Source={dbFile};Version=3;New=False;Compress=True;";
+            return $"Data Source={dbFile};Version=3;New=True;Compress=True;";
         }
 
         /// <summary>
