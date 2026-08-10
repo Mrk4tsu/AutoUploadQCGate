@@ -317,6 +317,29 @@ namespace DefaultNS.Common
             return success;
         }
 
+        public static int ExecuteNonQueryCount(string query_string, params SqlParameter[] parameters)
+        {
+            using (SqlConnection connection = new SqlConnection(connString))
+            {
+                try
+                {
+                    connection.Open();
+                    using (SqlCommand command = new SqlCommand(query_string, connection))
+                    {
+                        if (parameters != null)
+                            command.Parameters.AddRange(parameters);
+
+                        return command.ExecuteNonQuery();
+                    }
+                }
+                catch (SqlException ex)
+                {
+                    Global.WriteLogFile("[ExecuteNonQueryCount(parameterized)] - " + ex);
+                    return -1;
+                }
+            }
+        }
+
         public static bool ExecuteNonQueryF5(string query_string)
         {
             //InitGlobalVarial();

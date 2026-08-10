@@ -82,6 +82,7 @@ namespace AutoUploadQCGate
             public string LocalPath { get; set; }
             public string FileHash { get; set; }
             public int AttemptCount { get; set; }
+            public string ExistingLogs { get; set; }
             public bool IsLegacyRecovered { get; set; }
             public UploadResultView Upload { get; set; }
         }
@@ -409,6 +410,49 @@ namespace AutoUploadQCGate
             return new SqlParameter(name, value ?? DBNull.Value);
         }
 
+        private void RecomputeAllReuploadRequestStatuses()
+        {
+            var affectedRows = msSQL.ExecuteNonQueryCount(@"
+UPDATE request
+SET status = CASE
+        WHEN EXISTS (
+            SELECT 1 FROM dynamic_reupload_request_items item
+            WHERE item.reupload_request_id = request.pkid AND item.status = 'NeedsReview'
+        ) THEN 'NeedsReview'
+        WHEN EXISTS (
+            SELECT 1 FROM dynamic_reupload_request_items item
+            WHERE item.reupload_request_id = request.pkid AND item.status = 'Processing'
+        ) THEN 'Processing'
+        WHEN EXISTS (
+            SELECT 1 FROM dynamic_reupload_request_items item
+            WHERE item.reupload_request_id = request.pkid AND item.status = 'Pending'
+        ) THEN 'Pending'
+        WHEN EXISTS (
+            SELECT 1 FROM dynamic_reupload_request_items item
+            WHERE item.reupload_request_id = request.pkid AND item.status = 'Failed'
+        ) THEN 'Failed'
+        ELSE 'Uploaded'
+    END,
+    completed_at = CASE
+        WHEN EXISTS (
+            SELECT 1 FROM dynamic_reupload_request_items item
+            WHERE item.reupload_request_id = request.pkid
+              AND item.status IN ('NeedsReview', 'Processing', 'Pending')
+        ) THEN NULL
+        ELSE COALESCE(request.completed_at, GETDATE())
+    END,
+    updated_at = GETDATE()
+FROM dynamic_reupload_requests request
+WHERE request.status IN ('Pending', 'Processing', 'NeedsReview')
+   OR EXISTS (
+       SELECT 1 FROM dynamic_reupload_request_items item
+       WHERE item.reupload_request_id = request.pkid
+         AND item.status IN ('NeedsReview', 'Processing', 'Pending')
+   );");
+            if (affectedRows < 0)
+                Global.WriteLogFile("Re-upload request status recomputation failed.");
+        }
+
         private DataTable LoadReuploadWorkTable()
         {
             if (!msSQL.TestConnection())
@@ -417,14 +461,25 @@ namespace AutoUploadQCGate
             // Recover work items that were left in Processing by a terminated
             // AutoUpload instance. This is application-level state management;
             // the database intentionally has no foreign keys.
-            msSQL.ExecuteNonQuery(@"
+            var recoveredRows = msSQL.ExecuteNonQueryCount(@"
 UPDATE dynamic_reupload_request_items
-SET status = 'Pending', updated_at = GETDATE(), logs = CONCAT(COALESCE(logs, ''), ' [stale processing recovered]')
+SET status = CASE WHEN transfer_started_at IS NULL THEN 'Pending' ELSE 'NeedsReview' END,
+    review_reason = CASE
+        WHEN transfer_started_at IS NULL THEN NULL
+        ELSE 'Worker stopped after transfer started; receiver outcome must be verified.'
+    END,
+    updated_at = GETDATE(),
+    logs = CONCAT(
+        COALESCE(logs, ''),
+        CASE WHEN COALESCE(logs, '') = '' THEN '' ELSE CHAR(13) + CHAR(10) END,
+        '[', CONVERT(NVARCHAR(19), GETDATE(), 120), '] attempt=', attempt_count,
+        ' phase=recovery outcome=',
+        CASE WHEN transfer_started_at IS NULL THEN 'Pending' ELSE 'NeedsReview' END
+    )
 WHERE status = 'Processing' AND updated_at < DATEADD(MINUTE, -5, GETDATE());");
-            msSQL.ExecuteNonQuery(@"
-UPDATE dynamic_reupload_requests
-SET status = 'Pending', updated_at = GETDATE(), logs = CONCAT(COALESCE(logs, ''), ' [stale processing recovered]')
-WHERE status = 'Processing' AND updated_at < DATEADD(MINUTE, -5, GETDATE());");
+            if (recoveredRows < 0)
+                return new DataTable();
+            RecomputeAllReuploadRequestStatuses();
 
             var orphanItems = msSQL.ExecuteDataTable(@"
 SELECT ri.pkid AS item_id
@@ -433,33 +488,33 @@ INNER JOIN dynamic_reupload_request_items ri ON ri.reupload_request_id = r.pkid
 LEFT JOIN dynamic_aluminum_bag_information_queues qb
     ON qb.upload_data_queue_id = r.upload_data_queue_id
    AND qb.aluminum_bag_information_id = ri.aluminum_bag_information_id
-WHERE r.status IN ('Pending', 'Processing')
-  AND ri.status IN ('Pending', 'Failed')
+WHERE r.status IN ('Pending', 'Processing', 'NeedsReview')
+  AND ri.status = 'Pending'
   AND qb.pkid IS NULL;");
+            var orphanRowsUpdated = 0;
             foreach (DataRow orphan in orphanItems.Rows)
             {
-                msSQL.ExecuteNonQuery(@"
+                var affectedRows = msSQL.ExecuteNonQueryCount(@"
 UPDATE dynamic_reupload_request_items
 SET status = 'Failed',
     attempt_count = 3,
-    logs = 'Logical queue/aluminum bag link is missing; item rejected before SFTP.',
+    logs = CONCAT(
+        COALESCE(logs, ''),
+        CASE WHEN COALESCE(logs, '') = '' THEN '' ELSE CHAR(13) + CHAR(10) END,
+        '[', CONVERT(NVARCHAR(19), GETDATE(), 120),
+        '] phase=snapshot outcome=Failed reason=logical queue/aluminum bag link is missing'
+    ),
     updated_at = GETDATE()
 WHERE pkid = @item_id;",
                     SqlP("@item_id", Conv.atoi32(orphan["item_id"])));
+                if (affectedRows == 1)
+                    orphanRowsUpdated++;
+                else
+                    Global.WriteLogFile($"Re-upload orphan item update affected {affectedRows} rows.");
             }
-            if (orphanItems.Rows.Count > 0)
+            if (orphanRowsUpdated > 0)
             {
-                msSQL.ExecuteNonQuery(@"
-UPDATE dynamic_reupload_requests
-SET status = 'Failed', completed_at = GETDATE(), updated_at = GETDATE(),
-    logs = CONCAT(COALESCE(logs, ''), ' [one or more request items have no valid queue/bag link]')
-WHERE status IN ('Pending', 'Processing')
-  AND EXISTS (
-      SELECT 1 FROM dynamic_reupload_request_items i
-      WHERE i.reupload_request_id = dynamic_reupload_requests.pkid
-        AND i.status = 'Failed'
-        AND i.logs LIKE 'Logical queue/aluminum bag link is missing%'
-  );");
+                RecomputeAllReuploadRequestStatuses();
             }
 
             return msSQL.ExecuteDataTable(@"
@@ -477,6 +532,11 @@ SELECT DISTINCT
     ri.status AS item_status,
     ri.attempt_count,
     ri.is_legacy_recovered,
+    ri.logs AS item_logs,
+    ri.transfer_started_at,
+    ri.review_reason,
+    ri.reviewed_at,
+    ri.reviewed_by,
     q.pkid AS queue_id,
     q.created_at AS queue_created_at,
     d.combine_indication,
@@ -503,8 +563,8 @@ INNER JOIN dynamic_aluminum_bag_information_queues qb
 LEFT JOIN dynamic_upload_data d ON d.pkid = q.upload_data_id
 LEFT JOIN define_customers c ON c.pkid = d.customer_id
 LEFT JOIN define_design_informations des ON des.pkid = d.design_information_id
-WHERE r.status IN ('Pending', 'Processing')
-  AND ri.status IN ('Pending', 'Failed')
+WHERE r.status IN ('Pending', 'Processing', 'NeedsReview')
+  AND ri.status = 'Pending'
   AND ri.attempt_count < 3
 ORDER BY r.created_at, ri.pkid;");
         }
@@ -547,9 +607,11 @@ VALUES (@pkid_server, @queue_id, @operator_code, @status, @requested_bag_count, 
 INSERT INTO dynamic_reupload_request_items
 (pkid_server, reupload_request_id, aluminum_bag_information_id, aluminum_bag_code,
  source_file_path, local_file_path, file_hash, status, attempt_count,
- is_legacy_recovered, logs, created_at, uploaded_at, updated_at)
+ is_legacy_recovered, logs, transfer_started_at, review_reason, reviewed_at,
+ reviewed_by, created_at, uploaded_at, updated_at)
 VALUES (@pkid_server, @request_id, @bag_id, @bag_code, @source_path, @local_path,
- @file_hash, @status, @attempt_count, @legacy, @logs, @created_at, NULL, @updated_at);"
+ @file_hash, @status, @attempt_count, @legacy, @logs, @transfer_started_at,
+ @review_reason, @reviewed_at, @reviewed_by, @created_at, NULL, @updated_at);"
                     : @"
 UPDATE dynamic_reupload_request_items
 SET reupload_request_id = (SELECT pkid FROM dynamic_reupload_requests WHERE pkid_server = @request_server_id),
@@ -560,6 +622,11 @@ SET reupload_request_id = (SELECT pkid FROM dynamic_reupload_requests WHERE pkid
     file_hash = @file_hash,
     status = @status,
     attempt_count = @attempt_count,
+    logs = @logs,
+    transfer_started_at = @transfer_started_at,
+    review_reason = @review_reason,
+    reviewed_at = @reviewed_at,
+    reviewed_by = @reviewed_by,
     updated_at = @updated_at
 WHERE pkid_server = @pkid_server;";
                 SQLiteHelper.ExecuteNonQuery(itemSql,
@@ -574,7 +641,11 @@ WHERE pkid_server = @pkid_server;";
                     SQLiteHelper.P("@status", Conv.atos(row["item_status"])),
                     SQLiteHelper.P("@attempt_count", Conv.atoi32(row["attempt_count"])),
                     SQLiteHelper.P("@legacy", Conv.atob(row["is_legacy_recovered"]) ? 1 : 0),
-                    SQLiteHelper.P("@logs", ""),
+                    SQLiteHelper.P("@logs", Conv.atos(row["item_logs"])),
+                    SQLiteHelper.P("@transfer_started_at", row["transfer_started_at"] == DBNull.Value ? (object)DBNull.Value : Conv.atos(row["transfer_started_at"])),
+                    SQLiteHelper.P("@review_reason", Conv.atos(row["review_reason"])),
+                    SQLiteHelper.P("@reviewed_at", row["reviewed_at"] == DBNull.Value ? (object)DBNull.Value : Conv.atos(row["reviewed_at"])),
+                    SQLiteHelper.P("@reviewed_by", Conv.atos(row["reviewed_by"])),
                     SQLiteHelper.P("@created_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
                     SQLiteHelper.P("@updated_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")));
             }
@@ -649,22 +720,25 @@ LIMIT 1;",
                     SourcePath = Conv.atos(row["source_file_path"]),
                     FileHash = Conv.atos(row["file_hash"]),
                     AttemptCount = Conv.atoi32(row["attempt_count"]),
+                    ExistingLogs = Conv.atos(row["item_logs"]),
                 };
-                var nextAttempt = work.AttemptCount + 1;
                 var localPath = ResolveLocalSnapshotPath(row, out var legacyRecovered);
                 work.LocalPath = localPath;
                 var resolvedHash = Conv.atos(row["file_hash"]);
                 if (!string.IsNullOrWhiteSpace(resolvedHash))
                     work.FileHash = resolvedHash;
 
-                MarkReuploadProcessing(work);
+                if (!TryClaimReuploadItem(work))
+                    continue;
+
                 string log;
                 var snapshotHash = work.FileHash;
                 bool archived = SQLiteHelper.EnsureSnapshot(work.SourcePath, work.LocalPath, ref snapshotHash, out log);
                 work.FileHash = snapshotHash;
                 if (!archived)
                 {
-                    FinishReuploadItem(work, nextAttempt >= 3 ? "Failed" : "Pending", nextAttempt, log, legacyRecovered);
+                    var safeFailureStatus = ReuploadDeliveryPolicy.FailureStatus(false, work.AttemptCount);
+                    FinishReuploadItem(work, safeFailureStatus, log, legacyRecovered);
                     continue;
                 }
 
@@ -697,11 +771,22 @@ LIMIT 1;",
 
                 var logs = new StringBuilder();
                 bool success;
+                bool transferStarted = false;
+                Func<bool> markTransferStarted = () =>
+                {
+                    if (transferStarted)
+                        return true;
+
+                    transferStarted = MarkReuploadTransferStarted(work);
+                    if (!transferStarted)
+                        logs.AppendLine("Transfer was not started because its durable marker could not be saved.");
+                    return transferStarted;
+                };
                 try
                 {
                     success = result.CustomerCode?.ToUpper() == "C-02"
-                        ? UploadBySSHNet(result, logs)
-                        : UploadByWinSCP(result, logs);
+                        ? UploadBySSHNet(result, logs, markTransferStarted)
+                        : UploadByWinSCP(result, logs, markTransferStarted);
                 }
                 catch (Exception ex)
                 {
@@ -709,80 +794,163 @@ LIMIT 1;",
                     logs.AppendLine(ex.Message);
                 }
 
-                FinishReuploadItem(work, success ? "Uploaded" : (nextAttempt >= 3 ? "Failed" : "Pending"),
-                    nextAttempt, logs.ToString(), legacyRecovered, success ? DateTime.Now : (DateTime?)null);
+                var status = success
+                    ? ReuploadDeliveryPolicy.Uploaded
+                    : ReuploadDeliveryPolicy.FailureStatus(transferStarted, work.AttemptCount);
+                var finalized = FinishReuploadItem(
+                    work,
+                    status,
+                    logs.ToString(),
+                    legacyRecovered,
+                    success ? DateTime.Now : (DateTime?)null);
+                if (success && !finalized)
+                {
+                    MarkReuploadNeedsReview(
+                        work,
+                        "SFTP reported success but the delivery state could not be persisted.",
+                        logs.ToString());
+                }
             }
             await Task.Delay(50);
         }
 
-        private void MarkReuploadProcessing(ReuploadWorkItem work)
+        private bool TryClaimReuploadItem(ReuploadWorkItem work)
         {
-            msSQL.ExecuteNonQuery(@"
-UPDATE dynamic_reupload_requests SET status = 'Processing', started_at = COALESCE(started_at, GETDATE()), updated_at = GETDATE()
-WHERE pkid = @request_id AND status IN ('Pending', 'Processing');",
-                SqlP("@request_id", work.RequestId));
-            msSQL.ExecuteNonQuery(@"
-UPDATE dynamic_reupload_request_items
-SET status = 'Processing', updated_at = GETDATE()
-WHERE pkid = @item_id AND status IN ('Pending', 'Failed');",
+            var claimed = msSQL.ExecuteDataTable(@"
+UPDATE item WITH (UPDLOCK, ROWLOCK)
+SET status = 'Processing',
+    attempt_count = attempt_count + 1,
+    transfer_started_at = NULL,
+    review_reason = NULL,
+    reviewed_at = NULL,
+    reviewed_by = NULL,
+    updated_at = GETDATE(),
+    logs = CONCAT(
+        COALESCE(logs, ''),
+        CASE WHEN COALESCE(logs, '') = '' THEN '' ELSE CHAR(13) + CHAR(10) END,
+        '[', CONVERT(NVARCHAR(19), GETDATE(), 120), '] attempt=', attempt_count + 1,
+        ' phase=claim outcome=Claimed'
+    )
+OUTPUT INSERTED.attempt_count, INSERTED.logs
+FROM dynamic_reupload_request_items item
+WHERE item.pkid = @item_id
+  AND item.status = 'Pending'
+  AND item.attempt_count < 3;",
                 SqlP("@item_id", work.ItemId));
+            if (claimed.Rows.Count != 1)
+                return false;
+
+            work.AttemptCount = Conv.atoi32(claimed.Rows[0]["attempt_count"]);
+            work.ExistingLogs = Conv.atos(claimed.Rows[0]["logs"]);
+            var parentRows = msSQL.ExecuteNonQueryCount(@"
+UPDATE dynamic_reupload_requests
+SET started_at = COALESCE(started_at, GETDATE()), updated_at = GETDATE()
+WHERE pkid = @request_id;",
+                SqlP("@request_id", work.RequestId));
+            if (parentRows != 1)
+                Global.WriteLogFile($"Re-upload claim parent update affected {parentRows} rows for request {work.RequestId}.");
+            RecomputeAllReuploadRequestStatuses();
+
+            SQLiteHelper.ExecuteNonQuery(@"
+UPDATE dynamic_reupload_request_items
+SET status = 'Processing', attempt_count = @attempt_count,
+    transfer_started_at = NULL, review_reason = NULL,
+    reviewed_at = NULL, reviewed_by = NULL, logs = @logs,
+    updated_at = @updated_at
+WHERE pkid_server = @pkid_server;",
+                SQLiteHelper.P("@attempt_count", work.AttemptCount),
+                SQLiteHelper.P("@logs", work.ExistingLogs),
+                SQLiteHelper.P("@updated_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
+                SQLiteHelper.P("@pkid_server", work.ItemId));
+            return true;
         }
 
-        private void FinishReuploadItem(
+        private bool MarkReuploadTransferStarted(ReuploadWorkItem work)
+        {
+            var marked = msSQL.ExecuteDataTable(@"
+UPDATE item
+SET transfer_started_at = GETDATE(),
+    updated_at = GETDATE(),
+    logs = CONCAT(
+        COALESCE(logs, ''),
+        CASE WHEN COALESCE(logs, '') = '' THEN '' ELSE CHAR(13) + CHAR(10) END,
+        '[', CONVERT(NVARCHAR(19), GETDATE(), 120), '] attempt=', attempt_count,
+        ' phase=transfer outcome=Started'
+    )
+OUTPUT INSERTED.transfer_started_at, INSERTED.logs
+FROM dynamic_reupload_request_items item
+WHERE item.pkid = @item_id AND item.status = 'Processing' AND item.transfer_started_at IS NULL;",
+                SqlP("@item_id", work.ItemId));
+            if (marked.Rows.Count != 1)
+                return false;
+
+            work.ExistingLogs = Conv.atos(marked.Rows[0]["logs"]);
+            SQLiteHelper.ExecuteNonQuery(@"
+UPDATE dynamic_reupload_request_items
+SET transfer_started_at = @transfer_started_at, logs = @logs, updated_at = @updated_at
+WHERE pkid_server = @pkid_server;",
+                SQLiteHelper.P("@transfer_started_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
+                SQLiteHelper.P("@logs", work.ExistingLogs),
+                SQLiteHelper.P("@updated_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
+                SQLiteHelper.P("@pkid_server", work.ItemId));
+            return true;
+        }
+
+        private bool FinishReuploadItem(
             ReuploadWorkItem work,
             string status,
-            int attempt,
             string logs,
             bool legacyRecovered,
             DateTime? uploadedAt = null)
         {
-            msSQL.ExecuteNonQuery(@"
+            var audit = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] attempt={work.AttemptCount} phase=finalize outcome={status}";
+            if (!string.IsNullOrWhiteSpace(logs))
+                audit += Environment.NewLine + logs.Trim();
+            var reviewReason = status == ReuploadDeliveryPolicy.NeedsReview
+                ? "Transfer started but the receiver outcome is unknown."
+                : null;
+            var affectedRows = msSQL.ExecuteNonQueryCount(@"
 UPDATE dynamic_reupload_request_items
 SET status = @status,
-    attempt_count = @attempt_count,
     local_file_path = @local_path,
     file_hash = @file_hash,
     is_legacy_recovered = @legacy,
-    logs = @logs,
+    logs = CONCAT(
+        COALESCE(logs, ''),
+        CASE WHEN COALESCE(logs, '') = '' THEN '' ELSE CHAR(13) + CHAR(10) END,
+        @audit
+    ),
+    review_reason = @review_reason,
     uploaded_at = @uploaded_at,
     updated_at = GETDATE()
-WHERE pkid = @item_id;",
+WHERE pkid = @item_id AND status = 'Processing';",
                 SqlP("@status", status),
-                SqlP("@attempt_count", attempt),
                 SqlP("@local_path", work.LocalPath),
                 SqlP("@file_hash", work.FileHash),
                 SqlP("@legacy", legacyRecovered ? 1 : 0),
-                SqlP("@logs", logs ?? ""),
+                SqlP("@audit", audit),
+                SqlP("@review_reason", (object)reviewReason ?? DBNull.Value),
                 SqlP("@uploaded_at", uploadedAt.HasValue ? (object)uploadedAt.Value : DBNull.Value),
                 SqlP("@item_id", work.ItemId));
 
-            msSQL.ExecuteNonQuery(@"
-UPDATE dynamic_reupload_requests
-SET status = CASE
-    WHEN EXISTS (SELECT 1 FROM dynamic_reupload_request_items WHERE reupload_request_id = @request_id AND status = 'Failed') THEN 'Failed'
-    WHEN NOT EXISTS (SELECT 1 FROM dynamic_reupload_request_items WHERE reupload_request_id = @request_id AND status <> 'Uploaded') THEN 'Uploaded'
-    ELSE 'Processing'
-END,
-completed_at = CASE
-    WHEN EXISTS (SELECT 1 FROM dynamic_reupload_request_items WHERE reupload_request_id = @request_id AND status IN ('Failed', 'Pending', 'Processing')) THEN NULL
-    ELSE GETDATE()
-END,
-updated_at = GETDATE()
-WHERE pkid = @request_id;",
-                SqlP("@request_id", work.RequestId));
+            if (affectedRows == 1)
+                RecomputeAllReuploadRequestStatuses();
 
             SQLiteHelper.ExecuteNonQuery(@"
 UPDATE dynamic_reupload_request_items
 SET status = @status, attempt_count = @attempt_count, local_file_path = @local_path,
-    file_hash = @file_hash, is_legacy_recovered = @legacy, logs = @logs,
+    file_hash = @file_hash, is_legacy_recovered = @legacy,
+    logs = CASE WHEN COALESCE(logs, '') = '' THEN @audit ELSE logs || CHAR(13) || CHAR(10) || @audit END,
+    review_reason = @review_reason,
     uploaded_at = @uploaded_at, updated_at = @updated_at
 WHERE pkid_server = @pkid_server;",
                 SQLiteHelper.P("@status", status),
-                SQLiteHelper.P("@attempt_count", attempt),
+                SQLiteHelper.P("@attempt_count", work.AttemptCount),
                 SQLiteHelper.P("@local_path", work.LocalPath),
                 SQLiteHelper.P("@file_hash", work.FileHash),
                 SQLiteHelper.P("@legacy", legacyRecovered ? 1 : 0),
-                SQLiteHelper.P("@logs", logs ?? ""),
+                SQLiteHelper.P("@audit", audit),
+                SQLiteHelper.P("@review_reason", (object)reviewReason ?? DBNull.Value),
                 SQLiteHelper.P("@uploaded_at", uploadedAt.HasValue ? (object)uploadedAt.Value.ToString("yyyy-MM-dd HH:mm:ss") : DBNull.Value),
                 SQLiteHelper.P("@updated_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
                 SQLiteHelper.P("@pkid_server", work.ItemId));
@@ -791,18 +959,61 @@ UPDATE dynamic_reupload_requests
 SET status = CASE
     WHEN EXISTS (
         SELECT 1 FROM dynamic_reupload_request_items i
+        WHERE i.reupload_request_id = dynamic_reupload_requests.pkid AND i.status = 'NeedsReview'
+    ) THEN 'NeedsReview'
+    WHEN EXISTS (
+        SELECT 1 FROM dynamic_reupload_request_items i
+        WHERE i.reupload_request_id = dynamic_reupload_requests.pkid AND i.status = 'Processing'
+    ) THEN 'Processing'
+    WHEN EXISTS (
+        SELECT 1 FROM dynamic_reupload_request_items i
+        WHERE i.reupload_request_id = dynamic_reupload_requests.pkid AND i.status = 'Pending'
+    ) THEN 'Pending'
+    WHEN EXISTS (
+        SELECT 1 FROM dynamic_reupload_request_items i
         WHERE i.reupload_request_id = dynamic_reupload_requests.pkid AND i.status = 'Failed'
     ) THEN 'Failed'
-    WHEN NOT EXISTS (
-        SELECT 1 FROM dynamic_reupload_request_items i
-        WHERE i.reupload_request_id = dynamic_reupload_requests.pkid AND i.status <> 'Uploaded'
-    ) THEN 'Uploaded'
-    ELSE 'Processing'
+    ELSE 'Uploaded'
 END,
 updated_at = @updated_at
 WHERE pkid_server = @request_id;",
                 SQLiteHelper.P("@updated_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
                 SQLiteHelper.P("@request_id", work.RequestId));
+            return affectedRows == 1;
+        }
+
+        private void MarkReuploadNeedsReview(ReuploadWorkItem work, string reason, string transferLogs)
+        {
+            var audit = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] attempt={work.AttemptCount} phase=finalize outcome=NeedsReview";
+            if (!string.IsNullOrWhiteSpace(transferLogs))
+                audit += Environment.NewLine + transferLogs.Trim();
+            var affectedRows = msSQL.ExecuteNonQueryCount(@"
+UPDATE dynamic_reupload_request_items
+SET status = 'NeedsReview',
+    review_reason = @review_reason,
+    logs = CONCAT(
+        COALESCE(logs, ''),
+        CASE WHEN COALESCE(logs, '') = '' THEN '' ELSE CHAR(13) + CHAR(10) END,
+        @audit
+    ),
+    updated_at = GETDATE()
+WHERE pkid = @item_id AND status = 'Processing';",
+                SqlP("@review_reason", reason),
+                SqlP("@audit", audit),
+                SqlP("@item_id", work.ItemId));
+            if (affectedRows != 1)
+                Global.WriteLogFile($"Re-upload NeedsReview update affected {affectedRows} rows for item {work.ItemId}.");
+            RecomputeAllReuploadRequestStatuses();
+            SQLiteHelper.ExecuteNonQuery(@"
+UPDATE dynamic_reupload_request_items
+SET status = 'NeedsReview', review_reason = @review_reason,
+    logs = CASE WHEN COALESCE(logs, '') = '' THEN @audit ELSE logs || CHAR(13) || CHAR(10) || @audit END,
+    updated_at = @updated_at
+WHERE pkid_server = @pkid_server;",
+                SQLiteHelper.P("@review_reason", reason),
+                SQLiteHelper.P("@audit", audit),
+                SQLiteHelper.P("@updated_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
+                SQLiteHelper.P("@pkid_server", work.ItemId));
         }
         private async Task UpdateUI()
         {
@@ -1140,7 +1351,10 @@ WHERE pkid_server = @request_id;",
         {
             return (file?.LocalFilePath ?? "").Trim();
         }
-        private bool UploadByWinSCP(UploadResultView result, StringBuilder logBuilder)
+        private bool UploadByWinSCP(
+            UploadResultView result,
+            StringBuilder logBuilder,
+            Func<bool> beforeTransfer = null)
         {
             foreach (var file in result.AluminumBags)
             {
@@ -1181,6 +1395,8 @@ WHERE pkid_server = @request_id;",
                 {
                     string localPath = GetSnapshotPath(file);
                     string remotePath = $"{targetRemotePath}/{System.IO.Path.GetFileName(localPath)}";
+                    if (beforeTransfer != null && !beforeTransfer())
+                        return false;
                     session.PutFiles(localPath, remotePath).Check();
 
                     logBuilder.AppendLine($"Uploaded: {file.AluminumBagCode}.txt,");
@@ -1191,7 +1407,10 @@ WHERE pkid_server = @request_id;",
 
             return true;
         }
-        private bool UploadBySSHNet(UploadResultView result, StringBuilder logBuilder)
+        private bool UploadBySSHNet(
+            UploadResultView result,
+            StringBuilder logBuilder,
+            Func<bool> beforeTransfer = null)
         {
             try
             {
@@ -1252,6 +1471,8 @@ WHERE pkid_server = @request_id;",
                             using (var fs = File.OpenRead(localPath))
                             {
                                 string remoteFileName = System.IO.Path.GetFileName(localPath);
+                                if (beforeTransfer != null && !beforeTransfer())
+                                    return false;
                                 client.UploadFile(fs, $"{targetRemote}/{remoteFileName}");
                             }
                             logBuilder.AppendLine($"Uploaded: {file.AluminumBagCode}.txt,");
@@ -1476,7 +1697,7 @@ WHERE pkid_server = @request_id;",
                 UserName = group.SftpUser,
                 PortNumber = group.SftpPort ?? 22
             };
-            Global.WriteLog($"Server {group.SftpServer} - User : {group.SftpUser} - Pass : {group.SftpPassword}");
+            Global.WriteLog($"Server {group.SftpServer} - User : {group.SftpUser}");
             // ===== Customer ICT: Private Key =====
 
             opt.Password = group.SftpPassword;

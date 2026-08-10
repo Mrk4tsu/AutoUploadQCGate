@@ -5,6 +5,8 @@ VisualStudioVersion = 17.13.35507.96 d17.13
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutoUploadQCGate", "AutoUploadQCGate\AutoUploadQCGate.csproj", "{E1B24838-47DA-47F7-9EC2-9B64675870D2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutoUploadQCGate.Tests", "AutoUploadQCGate.Tests\AutoUploadQCGate.Tests.csproj", "{31D9345F-F7D8-4637-B0B7-C8BA4217C6B7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{E1B24838-47DA-47F7-9EC2-9B64675870D2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E1B24838-47DA-47F7-9EC2-9B64675870D2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E1B24838-47DA-47F7-9EC2-9B64675870D2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{31D9345F-F7D8-4637-B0B7-C8BA4217C6B7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{31D9345F-F7D8-4637-B0B7-C8BA4217C6B7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{31D9345F-F7D8-4637-B0B7-C8BA4217C6B7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{31D9345F-F7D8-4637-B0B7-C8BA4217C6B7}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -75,6 +75,10 @@ CREATE TABLE IF NOT EXISTS dynamic_reupload_request_items (
     attempt_count INTEGER NOT NULL DEFAULT 0,
     is_legacy_recovered INTEGER NOT NULL DEFAULT 0,
     logs TEXT,
+    transfer_started_at DATETIME,
+    review_reason TEXT,
+    reviewed_at DATETIME,
+    reviewed_by TEXT,
     created_at DATETIME NOT NULL,
     uploaded_at DATETIME,
     updated_at DATETIME NOT NULL
@@ -92,6 +96,10 @@ CREATE TABLE IF NOT EXISTS dynamic_reupload_request_items (
                             EnsureColumn(conn, tx, "dynamic_aluminum_informations", "is_legacy_recovered", "INTEGER NOT NULL DEFAULT 0");
                             EnsureColumn(conn, tx, "dynamic_aluminum_informations", "uploaded_at", "DATETIME");
                             EnsureColumn(conn, tx, "dynamic_aluminum_informations", "logs", "TEXT");
+                            EnsureColumn(conn, tx, "dynamic_reupload_request_items", "transfer_started_at", "DATETIME");
+                            EnsureColumn(conn, tx, "dynamic_reupload_request_items", "review_reason", "TEXT");
+                            EnsureColumn(conn, tx, "dynamic_reupload_request_items", "reviewed_at", "DATETIME");
+                            EnsureColumn(conn, tx, "dynamic_reupload_request_items", "reviewed_by", "TEXT");
                             tx.Commit();
                         }
                     }
