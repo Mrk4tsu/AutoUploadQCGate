@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS dynamic_reupload_request_items (
     review_reason TEXT,
     reviewed_at DATETIME,
     reviewed_by TEXT,
+    number_of_psc_ok INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL,
     uploaded_at DATETIME,
     updated_at DATETIME NOT NULL
@@ -166,6 +167,7 @@ CREATE TABLE IF NOT EXISTS dynamic_reupload_request_items (
                             EnsureColumn(conn, tx, "dynamic_reupload_request_items", "review_reason", "TEXT");
                             EnsureColumn(conn, tx, "dynamic_reupload_request_items", "reviewed_at", "DATETIME");
                             EnsureColumn(conn, tx, "dynamic_reupload_request_items", "reviewed_by", "TEXT");
+                            EnsureColumn(conn, tx, "dynamic_reupload_request_items", "number_of_psc_ok", "INTEGER NOT NULL DEFAULT 0");
                             tx.Commit();
                         }
                     }

@@ -117,6 +117,7 @@
     <Compile Include="common\SQLiteHelper.cs" />
     <Compile Include="Models\ReuploadAvailabilityState.cs" />
     <Compile Include="Models\ReuploadDeliveryPolicy.cs" />
+    <Compile Include="Models\ReuploadDisplayMapper.cs" />
     <Compile Include="Models\ReuploadSchemaCompatibility.cs" />
     <Compile Include="Models\UploadResultView.cs" />
     <Compile Include="PasswordInputWindow.xaml.cs">

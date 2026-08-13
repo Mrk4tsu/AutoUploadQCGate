@@ -160,6 +160,10 @@
                     <Setter Property="Background" Value="#FDECEC"/>
                     <Setter Property="BorderBrush" Value="#EF8D8D"/>
                 </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="NeedsReview">
+                    <Setter Property="Background" Value="#FFF5DE"/>
+                    <Setter Property="BorderBrush" Value="#F3C567"/>
+                </DataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -170,6 +174,7 @@
                 <DataTrigger Binding="{Binding Status}" Value="Processing"><Setter Property="Foreground" Value="#B47300"/></DataTrigger>
                 <DataTrigger Binding="{Binding Status}" Value="Success"><Setter Property="Foreground" Value="#16833F"/></DataTrigger>
                 <DataTrigger Binding="{Binding Status}" Value="Failed"><Setter Property="Foreground" Value="#C62828"/></DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="NeedsReview"><Setter Property="Foreground" Value="#B45309"/></DataTrigger>
             </Style.Triggers>
         </Style>
     </Window.Resources>
@@ -251,6 +256,9 @@
                     </RadioButton>
                     <RadioButton GroupName="StatusTabs" Tag="Failed" Style="{StaticResource StatusTabStyle}" Checked="StatusTab_Checked">
                         <StackPanel Orientation="Horizontal"><TextBlock Text="Failed"/><TextBlock x:Name="txtFailedCount" Text="0" Margin="7,0,0,0"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton GroupName="StatusTabs" Tag="NeedsReview" Style="{StaticResource StatusTabStyle}" Checked="StatusTab_Checked">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="Needs review"/><TextBlock x:Name="txtNeedsReviewCount" Text="0" Margin="7,0,0,0"/></StackPanel>
                     </RadioButton>
                 </StackPanel>
 
@@ -342,7 +350,7 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" Margin="16,9">
                                         <TextBlock Text="{Binding CombineIndication}" Foreground="#1E293B" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Text="{Binding CustomerCode}" Foreground="#94A3B8" FontSize="11" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{Binding DisplaySubtitle}" Foreground="#94A3B8" FontSize="11" Margin="0,2,0,0"/>
                                     </StackPanel>
                                     <TextBlock Grid.Column="1" Text="{Binding UploadQuantity, StringFormat=N0}" Margin="12,9" VerticalAlignment="Center" Foreground="#475569" HorizontalAlignment="Center"/>
                                     <TextBlock Grid.Column="2" Text="{Binding Log}" Margin="12,9" VerticalAlignment="Center" Foreground="#64748B" TextWrapping="Wrap" MaxHeight="54" TextTrimming="CharacterEllipsis" ToolTip="{Binding Log}"/>

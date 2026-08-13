@@ -190,6 +190,7 @@ namespace AutoUploadQCGate
             txtProcessingCount.Text = nonStatusResults.Count(x => x.Status == UploadStatusNames.Processing).ToString("N0");
             txtSuccessCount.Text = nonStatusResults.Count(x => x.Status == UploadStatusNames.Success).ToString("N0");
             txtFailedCount.Text = nonStatusResults.Count(x => x.Status == UploadStatusNames.Failed).ToString("N0");
+            txtNeedsReviewCount.Text = nonStatusResults.Count(x => x.Status == UploadStatusNames.NeedsReview).ToString("N0");
 
             var visibleResults = nonStatusResults.Where(MatchesSelectedStatus).ToList();
             txtTotalRecords.Text = visibleResults.Count.ToString("N0");
@@ -381,7 +382,9 @@ namespace AutoUploadQCGate
                 await UploadToSFTP();
                 await Task.Delay(100);
                 await UpdateReuploadDataLocal();
+                await UpdateUI();
                 await ProcessReuploadRequests();
+                await UpdateUI();
                 await Task.Delay(100);
                 await UpdateDataServer();
                 await Task.Delay(100);
@@ -613,7 +616,53 @@ WHERE pkid = @item_id;",
         private async Task UpdateReuploadDataLocal()
         {
             SQLiteHelper.EnsureSchema();
-            var table = LoadReuploadWorkTable();
+            LoadReuploadWorkTable();
+            if (_reuploadAvailability.IsBlocked)
+                return;
+
+            DataTable table;
+            string syncQueryError;
+            if (!msSQL.TryExecuteDataTable(
+                    ReuploadSchemaCompatibility.DisplaySyncQuerySql,
+                    out table,
+                    out syncQueryError))
+            {
+                if (SetReuploadBlocked(ReuploadSchemaCompatibility.OperationFailureMessage))
+                    Global.WriteLogFile("[UpdateReuploadDataLocal/display-sync] " + syncQueryError);
+                return;
+            }
+
+            UpsertReuploadDataLocal(table);
+
+            var cachedRequestTable = SQLiteHelper.ExecuteDataTable(
+                "SELECT pkid_server FROM dynamic_reupload_requests WHERE pkid_server > 0 ORDER BY pkid_server;");
+            var cachedRequestIds = cachedRequestTable.Rows.Cast<DataRow>()
+                .Select(row => Conv.atoi32(row["pkid_server"]))
+                .Where(id => id > 0)
+                .Distinct()
+                .ToList();
+            const int syncBatchSize = 500;
+            for (var offset = 0; offset < cachedRequestIds.Count; offset += syncBatchSize)
+            {
+                var cachedQuery = ReuploadSchemaCompatibility.BuildCachedDisplaySyncQuery(
+                    cachedRequestIds.Skip(offset).Take(syncBatchSize));
+                DataTable cachedTable;
+                string cachedQueryError;
+                if (!msSQL.TryExecuteDataTable(cachedQuery, out cachedTable, out cachedQueryError))
+                {
+                    if (SetReuploadBlocked(ReuploadSchemaCompatibility.OperationFailureMessage))
+                        Global.WriteLogFile("[UpdateReuploadDataLocal/cached-sync] " + cachedQueryError);
+                    return;
+                }
+                UpsertReuploadDataLocal(cachedTable);
+            }
+
+            SetReuploadAvailable();
+            await Task.Delay(50);
+        }
+
+        private void UpsertReuploadDataLocal(DataTable table)
+        {
             foreach (DataRow row in table.Rows)
             {
                 var requestId = Conv.atoi32(row["request_id"]);
@@ -629,15 +678,42 @@ INSERT INTO dynamic_reupload_requests
 (pkid_server, upload_data_queue_id, operator_code, status, requested_bag_count,
  logs, created_at, started_at, completed_at, updated_at)
 VALUES (@pkid_server, @queue_id, @operator_code, @status, @requested_bag_count, @logs,
- @created_at, NULL, NULL, @updated_at);",
+ @created_at, @started_at, @completed_at, @updated_at);",
                         SQLiteHelper.P("@pkid_server", requestId),
                         SQLiteHelper.P("@queue_id", Conv.atoi32(row["queue_id"])),
                         SQLiteHelper.P("@operator_code", Conv.atos(row["operator_code"])),
                         SQLiteHelper.P("@status", Conv.atos(row["request_status"])),
                         SQLiteHelper.P("@requested_bag_count", Conv.atoi32(row["requested_bag_count"])),
-                        SQLiteHelper.P("@logs", ""),
-                        SQLiteHelper.P("@created_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
-                        SQLiteHelper.P("@updated_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")));
+                        SQLiteHelper.P("@logs", Conv.atos(row["request_logs"])),
+                        SQLiteHelper.P("@created_at", SqliteDateValue(row["request_created_at"])),
+                        SQLiteHelper.P("@started_at", SqliteDateValue(row["request_started_at"])),
+                        SQLiteHelper.P("@completed_at", SqliteDateValue(row["request_completed_at"])),
+                        SQLiteHelper.P("@updated_at", SqliteDateValue(row["request_updated_at"])));
+                }
+                else
+                {
+                    SQLiteHelper.ExecuteNonQuery(@"
+UPDATE dynamic_reupload_requests
+SET upload_data_queue_id = @queue_id,
+    operator_code = @operator_code,
+    status = @status,
+    requested_bag_count = @requested_bag_count,
+    logs = @logs,
+    created_at = @created_at,
+    started_at = @started_at,
+    completed_at = @completed_at,
+    updated_at = @updated_at
+WHERE pkid_server = @pkid_server;",
+                        SQLiteHelper.P("@pkid_server", requestId),
+                        SQLiteHelper.P("@queue_id", Conv.atoi32(row["queue_id"])),
+                        SQLiteHelper.P("@operator_code", Conv.atos(row["operator_code"])),
+                        SQLiteHelper.P("@status", Conv.atos(row["request_status"])),
+                        SQLiteHelper.P("@requested_bag_count", Conv.atoi32(row["requested_bag_count"])),
+                        SQLiteHelper.P("@logs", Conv.atos(row["request_logs"])),
+                        SQLiteHelper.P("@created_at", SqliteDateValue(row["request_created_at"])),
+                        SQLiteHelper.P("@started_at", SqliteDateValue(row["request_started_at"])),
+                        SQLiteHelper.P("@completed_at", SqliteDateValue(row["request_completed_at"])),
+                        SQLiteHelper.P("@updated_at", SqliteDateValue(row["request_updated_at"])));
                 }
 
                 var localItem = SQLiteHelper.ExecuteScalar(
@@ -649,10 +725,10 @@ INSERT INTO dynamic_reupload_request_items
 (pkid_server, reupload_request_id, aluminum_bag_information_id, aluminum_bag_code,
  source_file_path, local_file_path, file_hash, status, attempt_count,
  is_legacy_recovered, logs, transfer_started_at, review_reason, reviewed_at,
- reviewed_by, created_at, uploaded_at, updated_at)
+ reviewed_by, number_of_psc_ok, created_at, uploaded_at, updated_at)
 VALUES (@pkid_server, @request_id, @bag_id, @bag_code, @source_path, @local_path,
  @file_hash, @status, @attempt_count, @legacy, @logs, @transfer_started_at,
- @review_reason, @reviewed_at, @reviewed_by, @created_at, NULL, @updated_at);"
+ @review_reason, @reviewed_at, @reviewed_by, @number_of_psc_ok, @created_at, @uploaded_at, @updated_at);"
                     : @"
 UPDATE dynamic_reupload_request_items
 SET reupload_request_id = (SELECT pkid FROM dynamic_reupload_requests WHERE pkid_server = @request_server_id),
@@ -668,6 +744,8 @@ SET reupload_request_id = (SELECT pkid FROM dynamic_reupload_requests WHERE pkid
     review_reason = @review_reason,
     reviewed_at = @reviewed_at,
     reviewed_by = @reviewed_by,
+    number_of_psc_ok = @number_of_psc_ok,
+    uploaded_at = @uploaded_at,
     updated_at = @updated_at
 WHERE pkid_server = @pkid_server;";
                 SQLiteHelper.ExecuteNonQuery(itemSql,
@@ -683,14 +761,15 @@ WHERE pkid_server = @pkid_server;";
                     SQLiteHelper.P("@attempt_count", Conv.atoi32(row["attempt_count"])),
                     SQLiteHelper.P("@legacy", Conv.atob(row["is_legacy_recovered"]) ? 1 : 0),
                     SQLiteHelper.P("@logs", Conv.atos(row["item_logs"])),
-                    SQLiteHelper.P("@transfer_started_at", row["transfer_started_at"] == DBNull.Value ? (object)DBNull.Value : Conv.atos(row["transfer_started_at"])),
+                    SQLiteHelper.P("@transfer_started_at", SqliteDateValue(row["transfer_started_at"])),
                     SQLiteHelper.P("@review_reason", Conv.atos(row["review_reason"])),
-                    SQLiteHelper.P("@reviewed_at", row["reviewed_at"] == DBNull.Value ? (object)DBNull.Value : Conv.atos(row["reviewed_at"])),
+                    SQLiteHelper.P("@reviewed_at", SqliteDateValue(row["reviewed_at"])),
                     SQLiteHelper.P("@reviewed_by", Conv.atos(row["reviewed_by"])),
-                    SQLiteHelper.P("@created_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
-                    SQLiteHelper.P("@updated_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")));
+                    SQLiteHelper.P("@number_of_psc_ok", Conv.atoi32(row["number_of_psc_ok"])),
+                    SQLiteHelper.P("@created_at", SqliteDateValue(row["item_created_at"])),
+                    SQLiteHelper.P("@uploaded_at", SqliteDateValue(row["item_uploaded_at"])),
+                    SQLiteHelper.P("@updated_at", SqliteDateValue(row["item_updated_at"])));
             }
-            await Task.Delay(50);
         }
 
         private string ResolveLocalSnapshotPath(DataRow row, out bool legacyRecovered)
@@ -772,6 +851,8 @@ LIMIT 1;",
                 if (!TryClaimReuploadItem(work))
                     continue;
 
+                await UpdateUI();
+
                 string log;
                 var snapshotHash = work.FileHash;
                 bool archived = SQLiteHelper.EnsureSnapshot(work.SourcePath, work.LocalPath, ref snapshotHash, out log);
@@ -780,6 +861,7 @@ LIMIT 1;",
                 {
                     var safeFailureStatus = ReuploadDeliveryPolicy.FailureStatus(false, work.AttemptCount);
                     FinishReuploadItem(work, safeFailureStatus, log, legacyRecovered);
+                    await UpdateUI();
                     continue;
                 }
 
@@ -851,8 +933,8 @@ LIMIT 1;",
                         "SFTP reported success but the delivery state could not be persisted.",
                         logs.ToString());
                 }
+                await UpdateUI();
             }
-            await Task.Delay(50);
         }
 
         private bool TryClaimReuploadItem(ReuploadWorkItem work)
@@ -1074,6 +1156,7 @@ WHERE pkid_server = @pkid_server;",
                 {
                     Pkid = pkid,
                     PkidLocal = pkidLocal,
+                    RecordKind = UploadRecordKinds.Normal,
                     CombineIndication = Conv.atos(row["combine_indication"]),
                     UploadQuantity = Conv.atoi32(row["ship_quantity"]),
                     CustomerCode = Conv.atos(row["customer_code"]),
@@ -1120,9 +1203,93 @@ WHERE pkid_server = @pkid_server;",
                 loadedResults.Add(result);
             }
 
+            AppendReuploadDisplayResults(loadedResults);
+
             await Application.Current.Dispatcher.InvokeAsync(() => ReplaceUploadResults(loadedResults));
 
             await Task.Delay(200);
+        }
+
+        private void AppendReuploadDisplayResults(ICollection<UploadResultView> loadedResults)
+        {
+            var displayTable = SQLiteHelper.ExecuteDataTable(@"
+SELECT
+    request.pkid_server AS request_id,
+    request.upload_data_queue_id AS queue_id,
+    request.status AS request_status,
+    request.logs AS request_logs,
+    request.created_at AS request_created_at,
+    request.completed_at AS request_completed_at,
+    queue.combine_indication,
+    queue.customer_code,
+    item.aluminum_bag_code,
+    item.number_of_psc_ok,
+    item.status AS item_status,
+    item.logs AS item_logs,
+    item.review_reason,
+    item.uploaded_at AS item_uploaded_at
+FROM dynamic_reupload_requests request
+LEFT JOIN dynamic_reupload_request_items item
+    ON item.reupload_request_id = request.pkid
+LEFT JOIN dynamic_upload_data_queues queue
+    ON queue.pkid_server = request.upload_data_queue_id
+ORDER BY request.created_at DESC, request.pkid_server DESC, item.pkid;");
+
+            var source = displayTable.Rows.Cast<DataRow>().Select(row => new ReuploadDisplaySource
+            {
+                RequestId = Conv.atoi32(row["request_id"]),
+                QueueId = Conv.atoi32(row["queue_id"]),
+                RequestStatus = Conv.atos(row["request_status"]),
+                RequestLogs = Conv.atos(row["request_logs"]),
+                RequestCreatedAt = ReadNullableDate(row["request_created_at"]),
+                RequestCompletedAt = ReadNullableDate(row["request_completed_at"]),
+                CombineIndication = Conv.atos(row["combine_indication"]),
+                CustomerCode = Conv.atos(row["customer_code"]),
+                BagCode = Conv.atos(row["aluminum_bag_code"]),
+                NumberOfPscOk = Conv.atoi32(row["number_of_psc_ok"]),
+                ItemStatus = Conv.atos(row["item_status"]),
+                ItemLogs = Conv.atos(row["item_logs"]),
+                ReviewReason = Conv.atos(row["review_reason"]),
+                ItemUploadedAt = ReadNullableDate(row["item_uploaded_at"]),
+            });
+
+            foreach (var summary in ReuploadDisplayMapper.Build(source))
+            {
+                loadedResults.Add(new UploadResultView
+                {
+                    Pkid = summary.QueueId,
+                    RecordKind = UploadRecordKinds.Reupload,
+                    ReuploadRequestId = summary.RequestId,
+                    IsReupload = true,
+                    IsUploaded = summary.Status == UploadStatusNames.Success,
+                    CombineIndication = summary.CombineIndication,
+                    CustomerCode = summary.CustomerCode,
+                    UploadQuantity = summary.UploadQuantity,
+                    Log = summary.Logs,
+                    Judgement = string.Empty,
+                    Status = summary.Status,
+                    UploadedAt = summary.UploadedAt.HasValue
+                        ? summary.UploadedAt.Value.ToString("yyyy-MM-dd HH:mm:ss")
+                        : string.Empty,
+                });
+            }
+        }
+
+        private static DateTime? ReadNullableDate(object value)
+        {
+            if (value == null || value == DBNull.Value)
+                return null;
+
+            DateTime parsed;
+            return DateTime.TryParse(value.ToString(), out parsed) ? parsed : (DateTime?)null;
+        }
+
+        private static object SqliteDateValue(object value)
+        {
+            var parsed = ReadNullableDate(value);
+            return parsed.HasValue
+                ? (object)parsed.Value.ToString("yyyy-MM-dd HH:mm:ss")
+                : DBNull.Value;
         }
         private async Task UpdateDataServer()
         {
@@ -1613,7 +1780,9 @@ WHERE pkid_server = @pkid_server;",
                 UploadResultView uiResult = null;
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
-                    uiResult = _uploadResults.FirstOrDefault(x => x.Pkid == result.Pkid);
+                    uiResult = _uploadResults.FirstOrDefault(x =>
+                        x.Pkid == result.Pkid &&
+                        string.Equals(x.RecordKind, UploadRecordKinds.Normal, StringComparison.Ordinal));
                     if (uiResult != null)
                     {
                         uiResult.Status = UploadStatusNames.Processing;

@@ -37,6 +37,12 @@
     <Compile Include="..\AutoUploadQCGate\Models\ReuploadDeliveryPolicy.cs">
       <Link>ReuploadDeliveryPolicy.cs</Link>
     </Compile>
+    <Compile Include="..\AutoUploadQCGate\Models\ReuploadDisplayMapper.cs">
+      <Link>ReuploadDisplayMapper.cs</Link>
+    </Compile>
+    <Compile Include="..\AutoUploadQCGate\Models\UploadResultView.cs">
+      <Link>UploadResultView.cs</Link>
+    </Compile>
     <Compile Include="..\AutoUploadQCGate\Models\ReuploadSchemaCompatibility.cs">
       <Link>ReuploadSchemaCompatibility.cs</Link>
     </Compile>

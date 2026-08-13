@@ -13,6 +13,7 @@ namespace AutoUploadQCGate.Models
         public const string Processing = "Processing";
         public const string Success = "Success";
         public const string Failed = "Failed";
+        public const string NeedsReview = "NeedsReview";
 
         public static string FromPersistence(bool isUploaded, string judgement)
         {
@@ -38,6 +39,9 @@ namespace AutoUploadQCGate.Models
             if (string.Equals(status, Failed, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(status, "Error", StringComparison.OrdinalIgnoreCase))
                 return Failed;
+
+            if (string.Equals(status, NeedsReview, StringComparison.OrdinalIgnoreCase))
+                return NeedsReview;
 
             return Pending;
         }
@@ -91,6 +95,8 @@ namespace AutoUploadQCGate.Models
         private int _pkid;
         private int _pkidLocal;
         private string _combineIndication;
+        private string _recordKind = UploadRecordKinds.Normal;
+        private int? _reuploadRequestId;
         private int _uploadQuantity;
         private string _customerCode;
         private bool? _isUploadFolder;
@@ -125,7 +131,13 @@ namespace AutoUploadQCGate.Models
         public int Pkid
         {
             get => _pkid;
-            set { _pkid = value; OnPropertyChanged(nameof(Pkid)); }
+            set
+            {
+                _pkid = value;
+                OnPropertyChanged(nameof(Pkid));
+                OnPropertyChanged(nameof(StableId));
+                OnPropertyChanged(nameof(DisplaySubtitle));
+            }
         }
 
         public string CombineIndication
@@ -133,6 +145,34 @@ namespace AutoUploadQCGate.Models
             get => _combineIndication;
             set { _combineIndication = value; OnPropertyChanged(nameof(CombineIndication)); }
         }
+        public string RecordKind
+        {
+            get => _recordKind;
+            set
+            {
+                _recordKind = string.IsNullOrWhiteSpace(value) ? UploadRecordKinds.Normal : value;
+                OnPropertyChanged(nameof(RecordKind));
+                OnPropertyChanged(nameof(StableId));
+                OnPropertyChanged(nameof(DisplaySubtitle));
+            }
+        }
+        public int? ReuploadRequestId
+        {
+            get => _reuploadRequestId;
+            set
+            {
+                _reuploadRequestId = value;
+                OnPropertyChanged(nameof(ReuploadRequestId));
+                OnPropertyChanged(nameof(StableId));
+                OnPropertyChanged(nameof(DisplaySubtitle));
+            }
+        }
+        public string StableId => string.Equals(RecordKind, UploadRecordKinds.Reupload, StringComparison.Ordinal)
+            ? $"reupload:{ReuploadRequestId.GetValueOrDefault()}"
+            : $"normal:{Pkid}";
+        public string DisplaySubtitle => string.Equals(RecordKind, UploadRecordKinds.Reupload, StringComparison.Ordinal)
+            ? $"Reupload #{ReuploadRequestId.GetValueOrDefault()} \u2022 Queue #{Pkid}"
+            : CustomerCode;
         public List<AluminumBagInfo> AluminumBags
         {
             get => _aluminumBags;
@@ -147,7 +187,12 @@ namespace AutoUploadQCGate.Models
         public string CustomerCode
         {
             get => _customerCode;
-            set { _customerCode = value; OnPropertyChanged(nameof(CustomerCode)); }
+            set
+            {
+                _customerCode = value;
+                OnPropertyChanged(nameof(CustomerCode));
+                OnPropertyChanged(nameof(DisplaySubtitle));
+            }
         }
 
         public bool? IsUploadFolder

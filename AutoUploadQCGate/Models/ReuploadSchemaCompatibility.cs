@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace AutoUploadQCGate.Models
 {
@@ -44,6 +46,7 @@ SELECT DISTINCT
     ri.review_reason,
     ri.reviewed_at,
     ri.reviewed_by,
+    abi.number_of_psc_ok,
     q.pkid AS queue_id,
     q.created_at AS queue_created_at,
     d.combine_indication,
@@ -63,6 +66,8 @@ SELECT DISTINCT
     des.item_name
 FROM dynamic_reupload_requests r
 INNER JOIN dynamic_reupload_request_items ri ON ri.reupload_request_id = r.pkid
+INNER JOIN dynamic_aluminum_bag_informations abi
+    ON abi.pkid = ri.aluminum_bag_information_id
 INNER JOIN dynamic_upload_data_queues q ON q.pkid = r.upload_data_queue_id
 INNER JOIN dynamic_aluminum_bag_information_queues qb
     ON qb.upload_data_queue_id = q.pkid
@@ -74,6 +79,59 @@ WHERE r.status IN ('Pending', 'Processing', 'NeedsReview')
   AND ri.status = 'Pending'
   AND ri.attempt_count < 3
 ORDER BY r.created_at, ri.pkid;";
+
+        public const string DisplaySyncBaseSql = @"
+SELECT
+    r.created_at AS request_created_at,
+    r.pkid AS request_id,
+    r.status AS request_status,
+    r.operator_code,
+    r.requested_bag_count,
+    r.logs AS request_logs,
+    r.started_at AS request_started_at,
+    r.completed_at AS request_completed_at,
+    r.updated_at AS request_updated_at,
+    ri.pkid AS item_id,
+    ri.aluminum_bag_information_id AS bag_id,
+    ri.aluminum_bag_code,
+    ri.source_file_path,
+    ri.local_file_path,
+    ri.file_hash,
+    ri.status AS item_status,
+    ri.attempt_count,
+    ri.is_legacy_recovered,
+    ri.logs AS item_logs,
+    ri.transfer_started_at,
+    ri.review_reason,
+    ri.reviewed_at,
+    ri.reviewed_by,
+    ri.created_at AS item_created_at,
+    ri.uploaded_at AS item_uploaded_at,
+    ri.updated_at AS item_updated_at,
+    abi.number_of_psc_ok,
+    r.upload_data_queue_id AS queue_id
+FROM dynamic_reupload_requests r
+INNER JOIN dynamic_reupload_request_items ri ON ri.reupload_request_id = r.pkid
+INNER JOIN dynamic_aluminum_bag_informations abi
+    ON abi.pkid = ri.aluminum_bag_information_id
+";
+
+        public const string DisplaySyncQuerySql = DisplaySyncBaseSql + @"
+WHERE r.status IN ('Pending', 'Processing', 'NeedsReview')
+ORDER BY r.created_at, ri.pkid;";
+
+        public static string BuildCachedDisplaySyncQuery(IEnumerable<int> requestIds)
+        {
+            var ids = requestIds == null
+                ? new List<int>()
+                : requestIds.Where(x => x > 0).Distinct().OrderBy(x => x).ToList();
+            if (ids.Count == 0)
+                return string.Empty;
+
+            return DisplaySyncBaseSql + Environment.NewLine +
+                   $"WHERE r.pkid IN ({string.Join(",", ids)})" + Environment.NewLine +
+                   "ORDER BY r.created_at, ri.pkid;";
+        }
 
         public static bool IsReady(object probeValue)
         {

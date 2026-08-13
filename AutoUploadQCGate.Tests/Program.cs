@@ -47,12 +47,26 @@ namespace AutoUploadQCGate.Tests
                     "The worker schema probe must require every delivery review column.");
                 AssertTrue(
                     ReuploadSchemaCompatibility.WorkQuerySql.Contains("r.created_at AS request_created_at") &&
-                    ReuploadSchemaCompatibility.WorkQuerySql.Contains("ORDER BY r.created_at, ri.pkid"),
-                    "Every ORDER BY expression in the DISTINCT work query must also be projected.");
+                    ReuploadSchemaCompatibility.WorkQuerySql.Contains("ORDER BY r.created_at, ri.pkid") &&
+                    ReuploadSchemaCompatibility.WorkQuerySql.Contains("abi.number_of_psc_ok") &&
+                    ReuploadSchemaCompatibility.DisplaySyncQuerySql.Contains("'NeedsReview'") &&
+                    !ReuploadSchemaCompatibility.DisplaySyncQuerySql.Contains("ri.status = 'Pending'"),
+                    "The work query must project stable ordering and the selected bag quantity.");
+                AssertEqual(
+                    UploadStatusNames.NeedsReview,
+                    UploadStatusNames.Normalize("NeedsReview"),
+                    "NeedsReview must remain a distinct display status.");
+                var cachedSyncQuery = ReuploadSchemaCompatibility.BuildCachedDisplaySyncQuery(new[] { 71, 71, 0, -1 });
+                AssertTrue(
+                    cachedSyncQuery.Contains("WHERE r.pkid IN (71)") &&
+                    cachedSyncQuery.Contains("request_completed_at") &&
+                    cachedSyncQuery.Contains("item_uploaded_at"),
+                    "Cached terminal requests must be synchronized without restoring unrelated history.");
+                VerifyReuploadDisplayMapping();
                 VerifyReuploadAvailabilityTransitions();
                 VerifyFreshCacheSchema();
 
-                Console.WriteLine("Reupload delivery policy and schema checks passed: 15/15");
+                Console.WriteLine("Reupload delivery policy, display, and schema checks passed.");
                 return 0;
             }
             catch (Exception ex)
@@ -91,6 +105,69 @@ namespace AutoUploadQCGate.Tests
                 "A successful later probe should automatically clear the reupload block.");
         }
 
+        private static void VerifyReuploadDisplayMapping()
+        {
+            var createdAt = new DateTime(2026, 8, 13, 17, 9, 11);
+            var completedAt = createdAt.AddSeconds(13);
+            var summaries = ReuploadDisplayMapper.Build(new[]
+            {
+                new ReuploadDisplaySource
+                {
+                    RequestId = 71,
+                    QueueId = 7,
+                    RequestStatus = ReuploadDeliveryPolicy.Uploaded,
+                    RequestCreatedAt = createdAt,
+                    RequestCompletedAt = completedAt,
+                    CombineIndication = "4M002303000B01082",
+                    CustomerCode = "C-01",
+                    BagCode = "BAG-1",
+                    NumberOfPscOk = 100,
+                    ItemStatus = ReuploadDeliveryPolicy.Uploaded,
+                    ItemLogs = "attempt=1 phase=finalize outcome=Uploaded",
+                },
+                new ReuploadDisplaySource
+                {
+                    RequestId = 71,
+                    QueueId = 7,
+                    RequestStatus = ReuploadDeliveryPolicy.Uploaded,
+                    RequestCreatedAt = createdAt,
+                    RequestCompletedAt = completedAt,
+                    CombineIndication = "4M002303000B01082",
+                    CustomerCode = "C-01",
+                    BagCode = "BAG-2",
+                    NumberOfPscOk = 200,
+                    ItemStatus = ReuploadDeliveryPolicy.Uploaded,
+                    ItemLogs = "attempt=1 phase=finalize outcome=Uploaded",
+                },
+            });
+
+            AssertTrue(summaries.Count == 1, "One request must create exactly one display row.");
+            AssertTrue(summaries[0].UploadQuantity == 300, "The display row must sum selected bag quantities.");
+            AssertEqual(UploadStatusNames.Success, summaries[0].Status, "Uploaded requests must display as Success.");
+            AssertEqual("reupload:71", summaries[0].StableId, "Reupload rows need a request-based stable identity.");
+            AssertTrue(summaries[0].Logs.Contains("[BAG-1]") && summaries[0].UploadedAt == completedAt,
+                "Attempt logs and completion time must remain visible.");
+
+            AssertEqual(
+                UploadStatusNames.NeedsReview,
+                ReuploadDisplayMapper.MapStatus(
+                    ReuploadDeliveryPolicy.Pending,
+                    new[] { ReuploadDeliveryPolicy.Pending, ReuploadDeliveryPolicy.NeedsReview }),
+                "NeedsReview must take priority over all other request item states.");
+
+            var normal = new UploadResultView { Pkid = 7, RecordKind = UploadRecordKinds.Normal };
+            var reupload = new UploadResultView
+            {
+                Pkid = 7,
+                RecordKind = UploadRecordKinds.Reupload,
+                ReuploadRequestId = 71,
+            };
+            AssertTrue(normal.StableId != reupload.StableId,
+                "Normal and reupload rows sharing a queue id must not collide.");
+            AssertTrue(reupload.DisplaySubtitle.Contains("Reupload #71") && reupload.DisplaySubtitle.Contains("Queue #7"),
+                "The reupload row must identify both request and queue.");
+        }
+
         private static void VerifyFreshCacheSchema()
         {
             var databasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "schema-verification.db3");
@@ -120,6 +197,7 @@ namespace AutoUploadQCGate.Tests
                     AssertColumnExists(connection, "dynamic_aluminum_informations", "local_file_path");
                     AssertColumnExists(connection, "dynamic_reupload_request_items", "transfer_started_at");
                     AssertColumnExists(connection, "dynamic_reupload_request_items", "review_reason");
+                    AssertColumnExists(connection, "dynamic_reupload_request_items", "number_of_psc_ok");
                 }
 
                 File.WriteAllText(sourcePath, "fresh SQLite cache verification");
