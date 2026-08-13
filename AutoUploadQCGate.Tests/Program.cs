@@ -45,10 +45,14 @@ namespace AutoUploadQCGate.Tests
                     ReuploadSchemaCompatibility.ProbeSql.Contains("reviewed_at") &&
                     ReuploadSchemaCompatibility.ProbeSql.Contains("reviewed_by"),
                     "The worker schema probe must require every delivery review column.");
+                AssertTrue(
+                    ReuploadSchemaCompatibility.WorkQuerySql.Contains("r.created_at AS request_created_at") &&
+                    ReuploadSchemaCompatibility.WorkQuerySql.Contains("ORDER BY r.created_at, ri.pkid"),
+                    "Every ORDER BY expression in the DISTINCT work query must also be projected.");
                 VerifyReuploadAvailabilityTransitions();
                 VerifyFreshCacheSchema();
 
-                Console.WriteLine("Reupload delivery policy and schema checks passed: 14/14");
+                Console.WriteLine("Reupload delivery policy and schema checks passed: 15/15");
                 return 0;
             }
             catch (Exception ex)
