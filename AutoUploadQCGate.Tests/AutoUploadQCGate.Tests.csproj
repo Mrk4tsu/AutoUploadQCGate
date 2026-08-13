@@ -31,8 +31,14 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="SQLiteSchemaTestStubs.cs" />
+    <Compile Include="..\AutoUploadQCGate\Models\ReuploadAvailabilityState.cs">
+      <Link>ReuploadAvailabilityState.cs</Link>
+    </Compile>
     <Compile Include="..\AutoUploadQCGate\Models\ReuploadDeliveryPolicy.cs">
       <Link>ReuploadDeliveryPolicy.cs</Link>
+    </Compile>
+    <Compile Include="..\AutoUploadQCGate\Models\ReuploadSchemaCompatibility.cs">
+      <Link>ReuploadSchemaCompatibility.cs</Link>
     </Compile>
     <Compile Include="..\AutoUploadQCGate\common\SQLiteHelper.cs">
       <Link>SQLiteHelper.cs</Link>

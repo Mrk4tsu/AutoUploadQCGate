@@ -33,9 +33,22 @@ namespace AutoUploadQCGate.Tests
                     ReuploadDeliveryPolicy.NeedsReview,
                     ReuploadDeliveryPolicy.StaleProcessingStatus(true),
                     "Stale work after transfer starts requires review.");
+                AssertTrue(
+                    ReuploadSchemaCompatibility.IsReady(1),
+                    "A successful schema probe should enable reupload.");
+                AssertTrue(
+                    !ReuploadSchemaCompatibility.IsReady(0),
+                    "A legacy schema probe should block reupload.");
+                AssertTrue(
+                    ReuploadSchemaCompatibility.ProbeSql.Contains("transfer_started_at") &&
+                    ReuploadSchemaCompatibility.ProbeSql.Contains("review_reason") &&
+                    ReuploadSchemaCompatibility.ProbeSql.Contains("reviewed_at") &&
+                    ReuploadSchemaCompatibility.ProbeSql.Contains("reviewed_by"),
+                    "The worker schema probe must require every delivery review column.");
+                VerifyReuploadAvailabilityTransitions();
                 VerifyFreshCacheSchema();
 
-                Console.WriteLine("Reupload delivery policy and SQLite schema checks passed: 7/7");
+                Console.WriteLine("Reupload delivery policy and schema checks passed: 14/14");
                 return 0;
             }
             catch (Exception ex)
@@ -49,6 +62,29 @@ namespace AutoUploadQCGate.Tests
         {
             if (!string.Equals(expected, actual, StringComparison.Ordinal))
                 throw new InvalidOperationException($"{message} Expected '{expected}', got '{actual}'.");
+        }
+
+        private static void AssertTrue(bool condition, string message)
+        {
+            if (!condition)
+                throw new InvalidOperationException(message);
+        }
+
+        private static void VerifyReuploadAvailabilityTransitions()
+        {
+            var state = new ReuploadAvailabilityState();
+            AssertTrue(
+                state.Block(ReuploadSchemaCompatibility.OutdatedMessage),
+                "The first schema mismatch should produce a state change and one log event.");
+            AssertTrue(
+                !state.Block(ReuploadSchemaCompatibility.OutdatedMessage),
+                "Repeated schema mismatches should not produce repeated log events.");
+            AssertTrue(
+                state.IsBlocked && state.Reason == ReuploadSchemaCompatibility.OutdatedMessage,
+                "The worker must retain the reupload block reason for the UI.");
+            AssertTrue(
+                state.Allow() && !state.IsBlocked && state.Reason == "",
+                "A successful later probe should automatically clear the reupload block.");
         }
 
         private static void VerifyFreshCacheSchema()

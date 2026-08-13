@@ -423,6 +423,36 @@ namespace DefaultNS.Common
             return dataTable;
         }
 
+        public static bool TryExecuteDataTable(
+            string query_string,
+            out DataTable dataTable,
+            out string errorMessage,
+            params SqlParameter[] parameters)
+        {
+            dataTable = new DataTable();
+            errorMessage = "";
+            using (SqlConnection connection = new SqlConnection(connString))
+            {
+                try
+                {
+                    connection.Open();
+                    using (SqlCommand command = new SqlCommand(query_string, connection))
+                    {
+                        if (parameters != null)
+                            command.Parameters.AddRange(parameters);
+                        using (SqlDataAdapter adapter = new SqlDataAdapter(command))
+                            adapter.Fill(dataTable);
+                    }
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    errorMessage = ex.Message;
+                    return false;
+                }
+            }
+        }
+
         public static DataTable ExecuteDataTableF5(string query_string)
         {
             //InitGlobalVarial();
@@ -473,6 +503,35 @@ namespace DefaultNS.Common
                 myConnection.Dispose();
             }
             return data_obj;
+        }
+
+        public static bool TryExecuteScalar(
+            string query_string,
+            out object value,
+            out string errorMessage,
+            params SqlParameter[] parameters)
+        {
+            value = null;
+            errorMessage = "";
+            using (SqlConnection connection = new SqlConnection(connString))
+            {
+                try
+                {
+                    connection.Open();
+                    using (SqlCommand command = new SqlCommand(query_string, connection))
+                    {
+                        if (parameters != null)
+                            command.Parameters.AddRange(parameters);
+                        value = command.ExecuteScalar();
+                    }
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    errorMessage = ex.Message;
+                    return false;
+                }
+            }
         }
         public static object ExecuteScalarF5(string query_string)
         {

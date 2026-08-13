@@ -96,6 +96,7 @@ namespace AutoUploadQCGate
         private Task _scanTask;
         private CancellationTokenSource _cancellationTokenSource;
         private readonly object _lockObject = new object();
+        private readonly ReuploadAvailabilityState _reuploadAvailability = new ReuploadAvailabilityState();
         private DataTable _queuesTable = new DataTable();
         List<UploadGroup> _updateRowSources = new List<UploadGroup>();
         private int _totalRecords = 0;
@@ -283,7 +284,20 @@ namespace AutoUploadQCGate
                 return;
             }
 
-            if (_isThreadProcess)
+            var isReuploadBlocked = _reuploadAvailability.IsBlocked;
+            var reuploadBlockReason = _reuploadAvailability.Reason;
+
+            txtReuploadWarning.Text = reuploadBlockReason;
+            txtReuploadWarning.Visibility = isReuploadBlocked ? Visibility.Visible : Visibility.Collapsed;
+
+            if (_isThreadProcess && isReuploadBlocked)
+            {
+                txtAppStatus.Text = "Running — Reupload blocked";
+                txtAppStatus.Foreground = new SolidColorBrush(Color.FromRgb(180, 83, 9));
+                appStatusBadge.Background = new SolidColorBrush(Color.FromRgb(255, 247, 237));
+                appStatusDot.Fill = new SolidColorBrush(Color.FromRgb(245, 158, 11));
+            }
+            else if (_isThreadProcess)
             {
                 txtAppStatus.Text = "Running";
                 txtAppStatus.Foreground = new SolidColorBrush(Color.FromRgb(22, 131, 63));
@@ -296,6 +310,29 @@ namespace AutoUploadQCGate
                 txtAppStatus.Foreground = new SolidColorBrush(Color.FromRgb(71, 85, 105));
                 appStatusBadge.Background = new SolidColorBrush(Color.FromRgb(238, 242, 246));
                 appStatusDot.Fill = new SolidColorBrush(Color.FromRgb(148, 163, 184));
+            }
+        }
+
+        private bool SetReuploadBlocked(string reason)
+        {
+            var changed = _reuploadAvailability.Block(reason);
+
+            if (changed)
+            {
+                Global.WriteLogFile("[ReuploadAvailability] Blocked: " + _reuploadAvailability.Reason);
+                Dispatcher.BeginInvoke(new Action(UpdateApplicationStatus));
+            }
+            return changed;
+        }
+
+        private void SetReuploadAvailable()
+        {
+            var changed = _reuploadAvailability.Allow();
+
+            if (changed)
+            {
+                Global.WriteLogFile("[ReuploadAvailability] Reupload database schema is ready; processing resumed.");
+                Dispatcher.BeginInvoke(new Action(UpdateApplicationStatus));
             }
         }
 
@@ -410,6 +447,29 @@ namespace AutoUploadQCGate
             return new SqlParameter(name, value ?? DBNull.Value);
         }
 
+        private bool IsReuploadSchemaReady()
+        {
+            object probeValue;
+            string errorMessage;
+            if (!msSQL.TryExecuteScalar(
+                    ReuploadSchemaCompatibility.ProbeSql,
+                    out probeValue,
+                    out errorMessage))
+            {
+                if (SetReuploadBlocked(ReuploadSchemaCompatibility.ValidationFailureMessage))
+                    Global.WriteLogFile("[ReuploadSchemaPreflight] " + errorMessage);
+                return false;
+            }
+
+            if (!ReuploadSchemaCompatibility.IsReady(probeValue))
+            {
+                SetReuploadBlocked(ReuploadSchemaCompatibility.OutdatedMessage);
+                return false;
+            }
+
+            return true;
+        }
+
         private void RecomputeAllReuploadRequestStatuses()
         {
             var affectedRows = msSQL.ExecuteNonQueryCount(@"
@@ -456,6 +516,11 @@ WHERE request.status IN ('Pending', 'Processing', 'NeedsReview')
         private DataTable LoadReuploadWorkTable()
         {
             if (!msSQL.TestConnection())
+            {
+                SetReuploadBlocked(ReuploadSchemaCompatibility.ValidationFailureMessage);
+                return new DataTable();
+            }
+            if (!IsReuploadSchemaReady())
                 return new DataTable();
 
             // Recover work items that were left in Processing by a terminated
@@ -478,10 +543,15 @@ SET status = CASE WHEN transfer_started_at IS NULL THEN 'Pending' ELSE 'NeedsRev
     )
 WHERE status = 'Processing' AND updated_at < DATEADD(MINUTE, -5, GETDATE());");
             if (recoveredRows < 0)
+            {
+                SetReuploadBlocked(ReuploadSchemaCompatibility.OperationFailureMessage);
                 return new DataTable();
+            }
             RecomputeAllReuploadRequestStatuses();
 
-            var orphanItems = msSQL.ExecuteDataTable(@"
+            DataTable orphanItems;
+            string orphanQueryError;
+            if (!msSQL.TryExecuteDataTable(@"
 SELECT ri.pkid AS item_id
 FROM dynamic_reupload_requests r
 INNER JOIN dynamic_reupload_request_items ri ON ri.reupload_request_id = r.pkid
@@ -490,7 +560,14 @@ LEFT JOIN dynamic_aluminum_bag_information_queues qb
    AND qb.aluminum_bag_information_id = ri.aluminum_bag_information_id
 WHERE r.status IN ('Pending', 'Processing', 'NeedsReview')
   AND ri.status = 'Pending'
-  AND qb.pkid IS NULL;");
+  AND qb.pkid IS NULL;",
+                    out orphanItems,
+                    out orphanQueryError))
+            {
+                if (SetReuploadBlocked(ReuploadSchemaCompatibility.OperationFailureMessage))
+                    Global.WriteLogFile("[LoadReuploadWorkTable/orphans] " + orphanQueryError);
+                return new DataTable();
+            }
             var orphanRowsUpdated = 0;
             foreach (DataRow orphan in orphanItems.Rows)
             {
@@ -517,7 +594,9 @@ WHERE pkid = @item_id;",
                 RecomputeAllReuploadRequestStatuses();
             }
 
-            return msSQL.ExecuteDataTable(@"
+            DataTable workTable;
+            string workQueryError;
+            if (!msSQL.TryExecuteDataTable(@"
 SELECT DISTINCT
     r.pkid AS request_id,
     r.status AS request_status,
@@ -566,7 +645,17 @@ LEFT JOIN define_design_informations des ON des.pkid = d.design_information_id
 WHERE r.status IN ('Pending', 'Processing', 'NeedsReview')
   AND ri.status = 'Pending'
   AND ri.attempt_count < 3
-ORDER BY r.created_at, ri.pkid;");
+ORDER BY r.created_at, ri.pkid;",
+                    out workTable,
+                    out workQueryError))
+            {
+                if (SetReuploadBlocked(ReuploadSchemaCompatibility.OperationFailureMessage))
+                    Global.WriteLogFile("[LoadReuploadWorkTable/work] " + workQueryError);
+                return new DataTable();
+            }
+
+            SetReuploadAvailable();
+            return workTable;
         }
 
         private async Task UpdateReuploadDataLocal()

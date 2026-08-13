@@ -115,7 +115,9 @@
       <SubType>Designer</SubType>
     </ApplicationDefinition>
     <Compile Include="common\SQLiteHelper.cs" />
+    <Compile Include="Models\ReuploadAvailabilityState.cs" />
     <Compile Include="Models\ReuploadDeliveryPolicy.cs" />
+    <Compile Include="Models\ReuploadSchemaCompatibility.cs" />
     <Compile Include="Models\UploadResultView.cs" />
     <Compile Include="PasswordInputWindow.xaml.cs">
       <DependentUpon>PasswordInputWindow.xaml</DependentUpon>

@@ -216,6 +216,13 @@
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="Automatic upload service" FontWeight="SemiBold" Foreground="#1E293B"/>
                     <TextBlock Text="Start or stop the background scan without changing the current filters." Margin="0,3,0,0" Foreground="#64748B"/>
+                    <TextBlock x:Name="txtReuploadWarning"
+                               Text="Reupload is blocked until the database migration is applied."
+                               Margin="0,5,16,0"
+                               Foreground="#B45309"
+                               FontWeight="SemiBold"
+                               TextWrapping="Wrap"
+                               Visibility="Collapsed"/>
                 </StackPanel>
                 <Button x:Name="btnStartScan" Grid.Column="1" Content="Start Auto Upload" Style="{StaticResource StartButton}" Margin="0,0,10,0" Click="btnStartScan_Click"/>
                 <Button x:Name="btnStopScan" Grid.Column="2" Content="Stop" Style="{StaticResource StopButton}" Click="btnStopScan_Click"/>
