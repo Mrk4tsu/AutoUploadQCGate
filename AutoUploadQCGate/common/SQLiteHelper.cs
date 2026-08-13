@@ -27,7 +27,11 @@ namespace DefaultNS
         }
         public static string GetConnectionString()
         {
-            string dbFile = GetDbFilePath();
+            return GetConnectionString(GetDbFilePath());
+        }
+
+        private static string GetConnectionString(string dbFile)
+        {
             return $"Data Source={dbFile};Version=3;New=True;Compress=True;";
         }
 
@@ -38,15 +42,77 @@ namespace DefaultNS
         /// </summary>
         public static bool EnsureSchema()
         {
+            return EnsureSchemaForDatabase(GetDbFilePath());
+        }
+
+        internal static bool EnsureSchemaForDatabase(string dbFile)
+        {
             lock (_dbLock)
             {
                 try
                 {
-                    using (var conn = new SQLiteConnection(GetConnectionString()))
+                    var databaseDirectory = Path.GetDirectoryName(dbFile);
+                    if (!string.IsNullOrWhiteSpace(databaseDirectory))
+                        Directory.CreateDirectory(databaseDirectory);
+
+                    using (var conn = new SQLiteConnection(GetConnectionString(dbFile)))
                     {
                         conn.Open();
                         using (var tx = conn.BeginTransaction())
                         {
+                            // A fresh install has no legacy AppConfig.db3 to seed these
+                            // tables. Create the cache schema before applying additive
+                            // migrations so the first sync can populate the worker UI.
+                            ExecuteSchemaCommand(conn, tx, @"
+CREATE TABLE IF NOT EXISTS dynamic_upload_data_queues (
+    pkid INTEGER PRIMARY KEY AUTOINCREMENT,
+    ship_quantity INTEGER DEFAULT 0,
+    upload_data_queue_server_id INTEGER,
+    combine_indication TEXT,
+    folder_name TEXT,
+    combine_server_path TEXT,
+    combine_local_path TEXT,
+    customer_name TEXT,
+    customer_code TEXT,
+    sftp_server TEXT,
+    sftp_port INTEGER,
+    sftp_user TEXT,
+    sftp_password TEXT,
+    sftp_remote_path TEXT,
+    is_upload_folder INTEGER,
+    created_at DATETIME,
+    status TEXT,
+    updated_at DATETIME,
+    logs TEXT,
+    judgement TEXT,
+    uploaded_at DATETIME,
+    is_reupload INTEGER NOT NULL DEFAULT 0,
+    pkid_server INTEGER,
+    is_uploaded INTEGER NOT NULL DEFAULT 0,
+    is_download INTEGER NOT NULL DEFAULT 0,
+    is_use_proxy INTEGER,
+    is_use_key INTEGER
+);");
+                            ExecuteSchemaCommand(conn, tx, @"
+CREATE TABLE IF NOT EXISTS dynamic_aluminum_informations (
+    pkid INTEGER PRIMARY KEY AUTOINCREMENT,
+    aluminum_bag_code TEXT,
+    file_path TEXT,
+    upload_data_queue_id INTEGER NOT NULL,
+    created_at DATETIME,
+    updated_at DATETIME,
+    aluminum_bag_information_id_server INTEGER,
+    source_file_path TEXT,
+    local_file_path TEXT,
+    file_hash TEXT,
+    status TEXT NOT NULL DEFAULT 'Pending',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    is_legacy_recovered INTEGER NOT NULL DEFAULT 0,
+    uploaded_at DATETIME,
+    logs TEXT
+);");
+                            ExecuteSchemaCommand(conn, tx, "CREATE INDEX IF NOT EXISTS ix_upload_data_queues_pkid_server ON dynamic_upload_data_queues(pkid_server);");
+                            ExecuteSchemaCommand(conn, tx, "CREATE INDEX IF NOT EXISTS ix_aluminum_informations_queue ON dynamic_aluminum_informations(upload_data_queue_id);");
                             ExecuteSchemaCommand(conn, tx, @"
 CREATE TABLE IF NOT EXISTS dynamic_reupload_requests (
     pkid INTEGER PRIMARY KEY AUTOINCREMENT,

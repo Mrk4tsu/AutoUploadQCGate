@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.Data.SQLite;
+using System.IO;
 using AutoUploadQCGate.Models;
+using DefaultNS;
 
 namespace AutoUploadQCGate.Tests
 {
@@ -29,8 +33,9 @@ namespace AutoUploadQCGate.Tests
                     ReuploadDeliveryPolicy.NeedsReview,
                     ReuploadDeliveryPolicy.StaleProcessingStatus(true),
                     "Stale work after transfer starts requires review.");
+                VerifyFreshCacheSchema();
 
-                Console.WriteLine("Reupload delivery policy checks passed: 5/5");
+                Console.WriteLine("Reupload delivery policy and SQLite schema checks passed: 7/7");
                 return 0;
             }
             catch (Exception ex)
@@ -44,6 +49,132 @@ namespace AutoUploadQCGate.Tests
         {
             if (!string.Equals(expected, actual, StringComparison.Ordinal))
                 throw new InvalidOperationException($"{message} Expected '{expected}', got '{actual}'.");
+        }
+
+        private static void VerifyFreshCacheSchema()
+        {
+            var databasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "schema-verification.db3");
+            var workerCachePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AppConfig.db3");
+            var sourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "schema-verification-source.txt");
+            var archiveDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "schema-verification-archive");
+            DeleteDatabaseArtifacts(databasePath);
+            DeleteDatabaseArtifacts(workerCachePath);
+            DeleteFileIfPresent(sourcePath);
+            DeleteDirectoryIfPresent(archiveDirectory);
+
+            try
+            {
+                if (!SQLiteHelper.EnsureSchemaForDatabase(databasePath))
+                    throw new InvalidOperationException("A fresh SQLite cache schema could not be created.");
+                if (!SQLiteHelper.EnsureSchemaForDatabase(databasePath))
+                    throw new InvalidOperationException("A second SQLite schema migration should be idempotent.");
+
+                using (var connection = new SQLiteConnection($"Data Source={databasePath};Version=3;"))
+                {
+                    connection.Open();
+                    AssertTableExists(connection, "dynamic_upload_data_queues");
+                    AssertTableExists(connection, "dynamic_aluminum_informations");
+                    AssertTableExists(connection, "dynamic_reupload_requests");
+                    AssertTableExists(connection, "dynamic_reupload_request_items");
+                    AssertColumnExists(connection, "dynamic_upload_data_queues", "pkid_server");
+                    AssertColumnExists(connection, "dynamic_aluminum_informations", "local_file_path");
+                    AssertColumnExists(connection, "dynamic_reupload_request_items", "transfer_started_at");
+                    AssertColumnExists(connection, "dynamic_reupload_request_items", "review_reason");
+                }
+
+                File.WriteAllText(sourcePath, "fresh SQLite cache verification");
+                var archivePath = Path.Combine(archiveDirectory, "bag.txt");
+                if (!SQLiteHelper.EnsureSchema())
+                    throw new InvalidOperationException("The worker SQLite cache could not be initialized.");
+                if (!SQLiteHelper.InsertOrUpdateUploadGroups(new List<MainWindow.UploadGroup>
+                {
+                    new MainWindow.UploadGroup
+                    {
+                        Pkid = 99001,
+                        CombineIndication = "SCHEMA-TEST",
+                        CustomerCode = "TEST",
+                        CombineLocalPath = archiveDirectory,
+                        AluminumBags = new List<MainWindow.AluminumBagInfo>
+                        {
+                            new MainWindow.AluminumBagInfo
+                            {
+                                AluminumBagInformationId = 88001,
+                                AluminumBagCode = "BAG-SCHEMA-TEST",
+                                FilePath = sourcePath,
+                                LocalFilePath = archivePath,
+                            },
+                        },
+                    },
+                }))
+                {
+                    throw new InvalidOperationException("The worker could not write a queue to a fresh SQLite cache.");
+                }
+
+                using (var connection = new SQLiteConnection($"Data Source={workerCachePath};Version=3;"))
+                {
+                    connection.Open();
+                    AssertScalar(connection, "SELECT COUNT(*) FROM dynamic_upload_data_queues WHERE pkid_server = 99001;", 1, "A queue should be stored in the fresh SQLite cache.");
+                    AssertScalar(connection, "SELECT COUNT(*) FROM dynamic_aluminum_informations WHERE aluminum_bag_information_id_server = 88001;", 1, "A bag should be stored in the fresh SQLite cache.");
+                    AssertScalar(connection, "SELECT is_download FROM dynamic_upload_data_queues WHERE pkid_server = 99001;", 1, "The archived test bag should mark the queue ready for upload.");
+                }
+            }
+            finally
+            {
+                DeleteDatabaseArtifacts(databasePath);
+                DeleteDatabaseArtifacts(workerCachePath);
+                DeleteFileIfPresent(sourcePath);
+                DeleteDirectoryIfPresent(archiveDirectory);
+            }
+        }
+
+        private static void AssertTableExists(SQLiteConnection connection, string tableName)
+        {
+            using (var command = new SQLiteCommand("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = @table_name;", connection))
+            {
+                command.Parameters.AddWithValue("@table_name", tableName);
+                if (Convert.ToInt32(command.ExecuteScalar()) != 1)
+                    throw new InvalidOperationException($"SQLite table '{tableName}' was not created.");
+            }
+        }
+
+        private static void AssertColumnExists(SQLiteConnection connection, string tableName, string columnName)
+        {
+            using (var command = new SQLiteCommand($"SELECT COUNT(*) FROM pragma_table_info('{tableName}') WHERE name = @column_name;", connection))
+            {
+                command.Parameters.AddWithValue("@column_name", columnName);
+                if (Convert.ToInt32(command.ExecuteScalar()) != 1)
+                    throw new InvalidOperationException($"SQLite column '{tableName}.{columnName}' was not created.");
+            }
+        }
+
+        private static void DeleteDatabaseArtifacts(string databasePath)
+        {
+            foreach (var path in new[] { databasePath, databasePath + "-journal", databasePath + "-shm", databasePath + "-wal" })
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+        }
+
+        private static void AssertScalar(SQLiteConnection connection, string sql, int expected, string message)
+        {
+            using (var command = new SQLiteCommand(sql, connection))
+            {
+                if (Convert.ToInt32(command.ExecuteScalar()) != expected)
+                    throw new InvalidOperationException(message);
+            }
+        }
+
+        private static void DeleteFileIfPresent(string path)
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+
+        private static void DeleteDirectoryIfPresent(string path)
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, true);
         }
     }
 }
