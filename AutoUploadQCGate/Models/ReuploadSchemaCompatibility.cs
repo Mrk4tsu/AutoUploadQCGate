@@ -133,6 +133,37 @@ ORDER BY r.created_at, ri.pkid;";
                    "ORDER BY r.created_at, ri.pkid;";
         }
 
+        public static string BuildQueueSummaryQuery(IEnumerable<int> queueIds)
+        {
+            var ids = queueIds == null
+                ? new List<int>()
+                : queueIds.Where(x => x > 0).Distinct().OrderBy(x => x).ToList();
+            if (ids.Count == 0)
+                return string.Empty;
+
+            return $@"
+WITH ranked_requests AS
+(
+    SELECT
+        r.upload_data_queue_id,
+        r.operator_code,
+        ROW_NUMBER() OVER
+        (
+            PARTITION BY r.upload_data_queue_id
+            ORDER BY r.created_at DESC, r.pkid DESC
+        ) AS recency_rank
+    FROM dynamic_reupload_requests r
+    WHERE r.upload_data_queue_id IN ({string.Join(",", ids)})
+)
+SELECT
+    upload_data_queue_id AS queue_id,
+    COUNT(*) AS reupload_request_count,
+    COALESCE(MAX(CASE WHEN recency_rank = 1 THEN operator_code END), '')
+        AS latest_reupload_operator_code
+FROM ranked_requests
+GROUP BY upload_data_queue_id;";
+        }
+
         public static bool IsReady(object probeValue)
         {
             if (probeValue == null || probeValue == DBNull.Value)

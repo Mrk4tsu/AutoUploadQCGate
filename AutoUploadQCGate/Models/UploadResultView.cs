@@ -98,6 +98,8 @@ namespace AutoUploadQCGate.Models
         private string _recordKind = UploadRecordKinds.Normal;
         private int? _reuploadRequestId;
         private int _uploadQuantity;
+        private int _reuploadRequestCount;
+        private string _requestedBy;
         private string _customerCode;
         private bool? _isUploadFolder;
         private bool? _isUseProxy;
@@ -182,6 +184,20 @@ namespace AutoUploadQCGate.Models
         {
             get => _uploadQuantity;
             set { _uploadQuantity = value; OnPropertyChanged(nameof(UploadQuantity)); }
+        }
+        public int ReuploadRequestCount
+        {
+            get => _reuploadRequestCount;
+            set { _reuploadRequestCount = value; OnPropertyChanged(nameof(ReuploadRequestCount)); }
+        }
+        public string RequestedBy
+        {
+            get => string.IsNullOrWhiteSpace(_requestedBy) ? "-" : _requestedBy;
+            set
+            {
+                _requestedBy = value ?? string.Empty;
+                OnPropertyChanged(nameof(RequestedBy));
+            }
         }
 
         public string CustomerCode

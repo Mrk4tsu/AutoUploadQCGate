@@ -91,7 +91,9 @@ CREATE TABLE IF NOT EXISTS dynamic_upload_data_queues (
     is_uploaded INTEGER NOT NULL DEFAULT 0,
     is_download INTEGER NOT NULL DEFAULT 0,
     is_use_proxy INTEGER,
-    is_use_key INTEGER
+    is_use_key INTEGER,
+    reupload_request_count INTEGER NOT NULL DEFAULT 0,
+    latest_reupload_operator_code TEXT
 );");
                             ExecuteSchemaCommand(conn, tx, @"
 CREATE TABLE IF NOT EXISTS dynamic_aluminum_informations (
@@ -163,6 +165,8 @@ CREATE TABLE IF NOT EXISTS dynamic_reupload_request_items (
                             EnsureColumn(conn, tx, "dynamic_aluminum_informations", "is_legacy_recovered", "INTEGER NOT NULL DEFAULT 0");
                             EnsureColumn(conn, tx, "dynamic_aluminum_informations", "uploaded_at", "DATETIME");
                             EnsureColumn(conn, tx, "dynamic_aluminum_informations", "logs", "TEXT");
+                            EnsureColumn(conn, tx, "dynamic_upload_data_queues", "reupload_request_count", "INTEGER NOT NULL DEFAULT 0");
+                            EnsureColumn(conn, tx, "dynamic_upload_data_queues", "latest_reupload_operator_code", "TEXT");
                             EnsureColumn(conn, tx, "dynamic_reupload_request_items", "transfer_started_at", "DATETIME");
                             EnsureColumn(conn, tx, "dynamic_reupload_request_items", "review_reason", "TEXT");
                             EnsureColumn(conn, tx, "dynamic_reupload_request_items", "reviewed_at", "DATETIME");

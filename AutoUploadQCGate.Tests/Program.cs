@@ -62,6 +62,12 @@ namespace AutoUploadQCGate.Tests
                     cachedSyncQuery.Contains("request_completed_at") &&
                     cachedSyncQuery.Contains("item_uploaded_at"),
                     "Cached terminal requests must be synchronized without restoring unrelated history.");
+                var queueSummaryQuery = ReuploadSchemaCompatibility.BuildQueueSummaryQuery(new[] { 8, 7, 8, 0, -1 });
+                AssertTrue(
+                    queueSummaryQuery.Contains("IN (7,8)") &&
+                    queueSummaryQuery.Contains("COUNT(*) AS reupload_request_count") &&
+                    queueSummaryQuery.Contains("ORDER BY r.created_at DESC, r.pkid DESC"),
+                    "Queue summaries must count all requests and choose the latest requester deterministically.");
                 VerifyReuploadDisplayMapping();
                 VerifyReuploadAvailabilityTransitions();
                 VerifyFreshCacheSchema();
@@ -162,6 +168,8 @@ namespace AutoUploadQCGate.Tests
                 RecordKind = UploadRecordKinds.Reupload,
                 ReuploadRequestId = 71,
             };
+            AssertTrue(normal.ReuploadRequestCount == 0 && normal.RequestedBy == "-",
+                "Queues without reupload requests must show zero and a placeholder requester.");
             AssertTrue(normal.StableId != reupload.StableId,
                 "Normal and reupload rows sharing a queue id must not collide.");
             AssertTrue(reupload.DisplaySubtitle.Contains("Reupload #71") && reupload.DisplaySubtitle.Contains("Queue #7"),
@@ -174,8 +182,10 @@ namespace AutoUploadQCGate.Tests
             var workerCachePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AppConfig.db3");
             var sourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "schema-verification-source.txt");
             var archiveDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "schema-verification-archive");
+            var legacyDatabasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "schema-verification-legacy.db3");
             DeleteDatabaseArtifacts(databasePath);
             DeleteDatabaseArtifacts(workerCachePath);
+            DeleteDatabaseArtifacts(legacyDatabasePath);
             DeleteFileIfPresent(sourcePath);
             DeleteDirectoryIfPresent(archiveDirectory);
 
@@ -194,10 +204,55 @@ namespace AutoUploadQCGate.Tests
                     AssertTableExists(connection, "dynamic_reupload_requests");
                     AssertTableExists(connection, "dynamic_reupload_request_items");
                     AssertColumnExists(connection, "dynamic_upload_data_queues", "pkid_server");
+                    AssertColumnExists(connection, "dynamic_upload_data_queues", "reupload_request_count");
+                    AssertColumnExists(connection, "dynamic_upload_data_queues", "latest_reupload_operator_code");
                     AssertColumnExists(connection, "dynamic_aluminum_informations", "local_file_path");
                     AssertColumnExists(connection, "dynamic_reupload_request_items", "transfer_started_at");
                     AssertColumnExists(connection, "dynamic_reupload_request_items", "review_reason");
                     AssertColumnExists(connection, "dynamic_reupload_request_items", "number_of_psc_ok");
+
+                    using (var command = new SQLiteCommand(
+                        "INSERT INTO dynamic_upload_data_queues (pkid_server) VALUES (1);", connection))
+                    {
+                        command.ExecuteNonQuery();
+                    }
+                    using (var command = new SQLiteCommand(@"
+UPDATE dynamic_upload_data_queues
+SET reupload_request_count = 2,
+    latest_reupload_operator_code = 'OP-NEW'
+WHERE pkid = 1;", connection))
+                    {
+                        command.ExecuteNonQuery();
+                    }
+                }
+
+                if (!SQLiteHelper.EnsureSchemaForDatabase(databasePath))
+                    throw new InvalidOperationException("Cached reupload summaries could not survive a schema recheck.");
+
+                using (var connection = new SQLiteConnection($"Data Source={databasePath};Version=3;"))
+                {
+                    connection.Open();
+                    AssertScalar(connection, "SELECT reupload_request_count FROM dynamic_upload_data_queues WHERE pkid = 1;", 2, "Cached reupload count should persist after restart.");
+                    AssertTextScalar(connection, "SELECT latest_reupload_operator_code FROM dynamic_upload_data_queues WHERE pkid = 1;", "OP-NEW", "Cached requester should persist after restart.");
+                }
+
+                using (var connection = new SQLiteConnection($"Data Source={legacyDatabasePath};Version=3;"))
+                {
+                    connection.Open();
+                    using (var command = new SQLiteCommand("CREATE TABLE dynamic_upload_data_queues (pkid INTEGER PRIMARY KEY AUTOINCREMENT, pkid_server INTEGER);", connection))
+                    {
+                        command.ExecuteNonQuery();
+                    }
+                }
+
+                if (!SQLiteHelper.EnsureSchemaForDatabase(legacyDatabasePath))
+                    throw new InvalidOperationException("An existing SQLite cache could not be migrated.");
+
+                using (var connection = new SQLiteConnection($"Data Source={legacyDatabasePath};Version=3;"))
+                {
+                    connection.Open();
+                    AssertColumnExists(connection, "dynamic_upload_data_queues", "reupload_request_count");
+                    AssertColumnExists(connection, "dynamic_upload_data_queues", "latest_reupload_operator_code");
                 }
 
                 File.WriteAllText(sourcePath, "fresh SQLite cache verification");
@@ -240,6 +295,7 @@ namespace AutoUploadQCGate.Tests
             {
                 DeleteDatabaseArtifacts(databasePath);
                 DeleteDatabaseArtifacts(workerCachePath);
+                DeleteDatabaseArtifacts(legacyDatabasePath);
                 DeleteFileIfPresent(sourcePath);
                 DeleteDirectoryIfPresent(archiveDirectory);
             }
@@ -279,6 +335,16 @@ namespace AutoUploadQCGate.Tests
             using (var command = new SQLiteCommand(sql, connection))
             {
                 if (Convert.ToInt32(command.ExecuteScalar()) != expected)
+                    throw new InvalidOperationException(message);
+            }
+        }
+
+        private static void AssertTextScalar(SQLiteConnection connection, string sql, string expected, string message)
+        {
+            using (var command = new SQLiteCommand(sql, connection))
+            {
+                var actual = Convert.ToString(command.ExecuteScalar());
+                if (!string.Equals(expected, actual, StringComparison.Ordinal))
                     throw new InvalidOperationException(message);
             }
         }

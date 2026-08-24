@@ -657,8 +657,57 @@ WHERE pkid = @item_id;",
                 UpsertReuploadDataLocal(cachedTable);
             }
 
+            SyncReuploadQueueSummaries();
             SetReuploadAvailable();
             await Task.Delay(50);
+        }
+
+        private void SyncReuploadQueueSummaries()
+        {
+            var queueTable = SQLiteHelper.ExecuteDataTable(@"
+SELECT pkid_server
+FROM dynamic_upload_data_queues
+WHERE pkid_server > 0
+ORDER BY pkid_server;");
+            var queueIds = queueTable.Rows.Cast<DataRow>()
+                .Select(row => Conv.atoi32(row["pkid_server"]))
+                .Where(id => id > 0)
+                .Distinct()
+                .ToList();
+            const int syncBatchSize = 500;
+
+            for (var offset = 0; offset < queueIds.Count; offset += syncBatchSize)
+            {
+                var batchQueueIds = queueIds.Skip(offset).Take(syncBatchSize).ToList();
+                var summaryQuery = ReuploadSchemaCompatibility.BuildQueueSummaryQuery(batchQueueIds);
+                DataTable summaryTable;
+                string summaryQueryError;
+                if (!msSQL.TryExecuteDataTable(summaryQuery, out summaryTable, out summaryQueryError))
+                {
+                    Global.WriteLogFile("[SyncReuploadQueueSummaries] " + summaryQueryError);
+                    return;
+                }
+
+                // Only replace cache values after SQL Server returns this whole batch.
+                // This preserves the last synchronized values during a connection failure.
+                SQLiteHelper.ExecuteNonQuery(@"
+UPDATE dynamic_upload_data_queues
+SET reupload_request_count = 0,
+    latest_reupload_operator_code = ''
+WHERE pkid_server IN (" + string.Join(",", batchQueueIds) + ");");
+
+                foreach (DataRow summary in summaryTable.Rows)
+                {
+                    SQLiteHelper.ExecuteNonQuery(@"
+UPDATE dynamic_upload_data_queues
+SET reupload_request_count = @reupload_request_count,
+    latest_reupload_operator_code = @latest_reupload_operator_code
+WHERE pkid_server = @queue_id;",
+                        SQLiteHelper.P("@reupload_request_count", Conv.atoi32(summary["reupload_request_count"])),
+                        SQLiteHelper.P("@latest_reupload_operator_code", Conv.atos(summary["latest_reupload_operator_code"])),
+                        SQLiteHelper.P("@queue_id", Conv.atoi32(summary["queue_id"])));
+                }
+            }
         }
 
         private void UpsertReuploadDataLocal(DataTable table)
@@ -1159,6 +1208,8 @@ WHERE pkid_server = @pkid_server;",
                     RecordKind = UploadRecordKinds.Normal,
                     CombineIndication = Conv.atos(row["combine_indication"]),
                     UploadQuantity = Conv.atoi32(row["ship_quantity"]),
+                    ReuploadRequestCount = Conv.atoi32(row["reupload_request_count"]),
+                    RequestedBy = Conv.atos(row["latest_reupload_operator_code"]),
                     CustomerCode = Conv.atos(row["customer_code"]),
                     IsUploadFolder = Conv.atob(row["is_upload_folder"]),
                     IsUseProxy = Conv.atob(row["is_use_proxy"]),
@@ -1212,6 +1263,10 @@ WHERE pkid_server = @pkid_server;",
 
         private void AppendReuploadDisplayResults(ICollection<UploadResultView> loadedResults)
         {
+            var queueResults = loadedResults
+                .Where(result => string.Equals(result.RecordKind, UploadRecordKinds.Normal, StringComparison.Ordinal))
+                .GroupBy(result => result.Pkid)
+                .ToDictionary(group => group.Key, group => group.First());
             var displayTable = SQLiteHelper.ExecuteDataTable(@"
 SELECT
     request.pkid_server AS request_id,
@@ -1255,6 +1310,8 @@ ORDER BY request.created_at DESC, request.pkid_server DESC, item.pkid;");
 
             foreach (var summary in ReuploadDisplayMapper.Build(source))
             {
+                UploadResultView queueResult;
+                queueResults.TryGetValue(summary.QueueId, out queueResult);
                 loadedResults.Add(new UploadResultView
                 {
                     Pkid = summary.QueueId,
@@ -1265,6 +1322,8 @@ ORDER BY request.created_at DESC, request.pkid_server DESC, item.pkid;");
                     CombineIndication = summary.CombineIndication,
                     CustomerCode = summary.CustomerCode,
                     UploadQuantity = summary.UploadQuantity,
+                    ReuploadRequestCount = queueResult == null ? 0 : queueResult.ReuploadRequestCount,
+                    RequestedBy = queueResult == null ? string.Empty : queueResult.RequestedBy,
                     Log = summary.Logs,
                     Judgement = string.Empty,
                     Status = summary.Status,
