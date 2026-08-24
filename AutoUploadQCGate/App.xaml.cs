@@ -152,6 +152,7 @@ namespace AutoUploadQCGate
 
         private void ExitApplication()
         {
+            LoadSetting();
             string appPassword = _appSetting.ApplicationPassword;
 
             var passwordDialog = new PasswordInputWindow(appPassword)
