@@ -50,6 +50,7 @@ namespace AutoUploadQCGate
             public int QuantityUpload { get; set; }
             public string CombineIndication { get; set; }
             public string CustomerCode { get; set; }
+            public string CustomerName { get; set; }
             public bool? IsUploadFolder { get; set; }
             public bool? IsUseKey { get; set; }
             public bool? IsUseProxy { get; set; }
@@ -238,6 +239,7 @@ namespace AutoUploadQCGate
                 e.PropertyName == nameof(UploadResultView.UploadedAt) ||
                 e.PropertyName == nameof(UploadResultView.Log) ||
                 e.PropertyName == nameof(UploadResultView.CustomerCode) ||
+                e.PropertyName == nameof(UploadResultView.CustomerName) ||
                 e.PropertyName == nameof(UploadResultView.CombineIndication))
                 ScheduleFilterRefresh();
         }
@@ -692,8 +694,7 @@ ORDER BY pkid_server;");
                 // This preserves the last synchronized values during a connection failure.
                 SQLiteHelper.ExecuteNonQuery(@"
 UPDATE dynamic_upload_data_queues
-SET reupload_request_count = 0,
-    latest_reupload_operator_code = ''
+SET reupload_request_count = 0
 WHERE pkid_server IN (" + string.Join(",", batchQueueIds) + ");");
 
                 foreach (DataRow summary in summaryTable.Rows)
@@ -701,10 +702,10 @@ WHERE pkid_server IN (" + string.Join(",", batchQueueIds) + ");");
                     SQLiteHelper.ExecuteNonQuery(@"
 UPDATE dynamic_upload_data_queues
 SET reupload_request_count = @reupload_request_count,
-    latest_reupload_operator_code = @latest_reupload_operator_code
+    customer_name = @customer_name
 WHERE pkid_server = @queue_id;",
                         SQLiteHelper.P("@reupload_request_count", Conv.atoi32(summary["reupload_request_count"])),
-                        SQLiteHelper.P("@latest_reupload_operator_code", Conv.atos(summary["latest_reupload_operator_code"])),
+                        SQLiteHelper.P("@customer_name", Conv.atos(summary["customer_name"])),
                         SQLiteHelper.P("@queue_id", Conv.atoi32(summary["queue_id"])));
                 }
             }
@@ -1209,8 +1210,8 @@ WHERE pkid_server = @pkid_server;",
                     CombineIndication = Conv.atos(row["combine_indication"]),
                     UploadQuantity = Conv.atoi32(row["ship_quantity"]),
                     ReuploadRequestCount = Conv.atoi32(row["reupload_request_count"]),
-                    RequestedBy = Conv.atos(row["latest_reupload_operator_code"]),
                     CustomerCode = Conv.atos(row["customer_code"]),
+                    CustomerName = Conv.atos(row["customer_name"]),
                     IsUploadFolder = Conv.atob(row["is_upload_folder"]),
                     IsUseProxy = Conv.atob(row["is_use_proxy"]),
                     IsUseKey = Conv.atob(row["is_use_key"]),
@@ -1321,9 +1322,9 @@ ORDER BY request.created_at DESC, request.pkid_server DESC, item.pkid;");
                     IsUploaded = summary.Status == UploadStatusNames.Success,
                     CombineIndication = summary.CombineIndication,
                     CustomerCode = summary.CustomerCode,
+                    CustomerName = queueResult == null ? string.Empty : queueResult.CustomerName,
                     UploadQuantity = summary.UploadQuantity,
                     ReuploadRequestCount = queueResult == null ? 0 : queueResult.ReuploadRequestCount,
-                    RequestedBy = queueResult == null ? string.Empty : queueResult.RequestedBy,
                     Log = summary.Logs,
                     Judgement = string.Empty,
                     Status = summary.Status,
@@ -1465,6 +1466,8 @@ ORDER BY request.created_at DESC, request.pkid_server DESC, item.pkid;");
                             CombineIndication = combineIndication,
 
                             CustomerCode = first?["customer_code"]?.ToString() ?? "",
+
+                            CustomerName = customerName,
 
                             IsUploadFolder = first?["is_upload_folder"] == DBNull.Value
                                 ? null

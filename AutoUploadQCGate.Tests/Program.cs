@@ -65,9 +65,10 @@ namespace AutoUploadQCGate.Tests
                 var queueSummaryQuery = ReuploadSchemaCompatibility.BuildQueueSummaryQuery(new[] { 8, 7, 8, 0, -1 });
                 AssertTrue(
                     queueSummaryQuery.Contains("IN (7,8)") &&
-                    queueSummaryQuery.Contains("COUNT(*) AS reupload_request_count") &&
-                    queueSummaryQuery.Contains("ORDER BY r.created_at DESC, r.pkid DESC"),
-                    "Queue summaries must count all requests and choose the latest requester deterministically.");
+                    queueSummaryQuery.Contains("COUNT(request.pkid) AS reupload_request_count") &&
+                    queueSummaryQuery.Contains("define_customers customer") &&
+                    queueSummaryQuery.Contains("customer.customer_name"),
+                    "Queue summaries must count all requests and include the server customer name.");
                 VerifyReuploadDisplayMapping();
                 VerifyReuploadAvailabilityTransitions();
                 VerifyFreshCacheSchema();
@@ -168,8 +169,8 @@ namespace AutoUploadQCGate.Tests
                 RecordKind = UploadRecordKinds.Reupload,
                 ReuploadRequestId = 71,
             };
-            AssertTrue(normal.ReuploadRequestCount == 0 && normal.RequestedBy == "-",
-                "Queues without reupload requests must show zero and a placeholder requester.");
+            AssertTrue(normal.ReuploadRequestCount == 0 && normal.CustomerName == "-",
+                "Queues without reupload requests or a customer must show zero and a placeholder.");
             AssertTrue(normal.StableId != reupload.StableId,
                 "Normal and reupload rows sharing a queue id must not collide.");
             AssertTrue(reupload.DisplaySubtitle.Contains("Reupload #71") && reupload.DisplaySubtitle.Contains("Queue #7"),
@@ -205,7 +206,6 @@ namespace AutoUploadQCGate.Tests
                     AssertTableExists(connection, "dynamic_reupload_request_items");
                     AssertColumnExists(connection, "dynamic_upload_data_queues", "pkid_server");
                     AssertColumnExists(connection, "dynamic_upload_data_queues", "reupload_request_count");
-                    AssertColumnExists(connection, "dynamic_upload_data_queues", "latest_reupload_operator_code");
                     AssertColumnExists(connection, "dynamic_aluminum_informations", "local_file_path");
                     AssertColumnExists(connection, "dynamic_reupload_request_items", "transfer_started_at");
                     AssertColumnExists(connection, "dynamic_reupload_request_items", "review_reason");
@@ -219,7 +219,7 @@ namespace AutoUploadQCGate.Tests
                     using (var command = new SQLiteCommand(@"
 UPDATE dynamic_upload_data_queues
 SET reupload_request_count = 2,
-    latest_reupload_operator_code = 'OP-NEW'
+    customer_name = 'Customer New'
 WHERE pkid = 1;", connection))
                     {
                         command.ExecuteNonQuery();
@@ -233,13 +233,20 @@ WHERE pkid = 1;", connection))
                 {
                     connection.Open();
                     AssertScalar(connection, "SELECT reupload_request_count FROM dynamic_upload_data_queues WHERE pkid = 1;", 2, "Cached reupload count should persist after restart.");
-                    AssertTextScalar(connection, "SELECT latest_reupload_operator_code FROM dynamic_upload_data_queues WHERE pkid = 1;", "OP-NEW", "Cached requester should persist after restart.");
+                    AssertTextScalar(connection, "SELECT customer_name FROM dynamic_upload_data_queues WHERE pkid = 1;", "Customer New", "Cached customer should persist after restart.");
                 }
 
                 using (var connection = new SQLiteConnection($"Data Source={legacyDatabasePath};Version=3;"))
                 {
                     connection.Open();
-                    using (var command = new SQLiteCommand("CREATE TABLE dynamic_upload_data_queues (pkid INTEGER PRIMARY KEY AUTOINCREMENT, pkid_server INTEGER);", connection))
+                    using (var command = new SQLiteCommand(@"
+CREATE TABLE dynamic_upload_data_queues (
+    pkid INTEGER PRIMARY KEY AUTOINCREMENT,
+    pkid_server INTEGER,
+    latest_reupload_operator_code TEXT
+);
+INSERT INTO dynamic_upload_data_queues (pkid_server, latest_reupload_operator_code)
+VALUES (2, 'LEGACY-OP');", connection))
                     {
                         command.ExecuteNonQuery();
                     }
@@ -253,6 +260,7 @@ WHERE pkid = 1;", connection))
                     connection.Open();
                     AssertColumnExists(connection, "dynamic_upload_data_queues", "reupload_request_count");
                     AssertColumnExists(connection, "dynamic_upload_data_queues", "latest_reupload_operator_code");
+                    AssertTextScalar(connection, "SELECT latest_reupload_operator_code FROM dynamic_upload_data_queues WHERE pkid_server = 2;", "LEGACY-OP", "An obsolete cache column should remain untouched in existing SQLite databases.");
                 }
 
                 File.WriteAllText(sourcePath, "fresh SQLite cache verification");
@@ -266,6 +274,7 @@ WHERE pkid = 1;", connection))
                         Pkid = 99001,
                         CombineIndication = "SCHEMA-TEST",
                         CustomerCode = "TEST",
+                        CustomerName = "Schema Customer",
                         CombineLocalPath = archiveDirectory,
                         AluminumBags = new List<MainWindow.AluminumBagInfo>
                         {
@@ -287,6 +296,7 @@ WHERE pkid = 1;", connection))
                 {
                     connection.Open();
                     AssertScalar(connection, "SELECT COUNT(*) FROM dynamic_upload_data_queues WHERE pkid_server = 99001;", 1, "A queue should be stored in the fresh SQLite cache.");
+                    AssertTextScalar(connection, "SELECT customer_name FROM dynamic_upload_data_queues WHERE pkid_server = 99001;", "Schema Customer", "The customer name should be stored in the fresh SQLite cache.");
                     AssertScalar(connection, "SELECT COUNT(*) FROM dynamic_aluminum_informations WHERE aluminum_bag_information_id_server = 88001;", 1, "A bag should be stored in the fresh SQLite cache.");
                     AssertScalar(connection, "SELECT is_download FROM dynamic_upload_data_queues WHERE pkid_server = 99001;", 1, "The archived test bag should mark the queue ready for upload.");
                 }

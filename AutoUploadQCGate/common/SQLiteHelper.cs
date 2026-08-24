@@ -92,8 +92,7 @@ CREATE TABLE IF NOT EXISTS dynamic_upload_data_queues (
     is_download INTEGER NOT NULL DEFAULT 0,
     is_use_proxy INTEGER,
     is_use_key INTEGER,
-    reupload_request_count INTEGER NOT NULL DEFAULT 0,
-    latest_reupload_operator_code TEXT
+    reupload_request_count INTEGER NOT NULL DEFAULT 0
 );");
                             ExecuteSchemaCommand(conn, tx, @"
 CREATE TABLE IF NOT EXISTS dynamic_aluminum_informations (
@@ -166,7 +165,6 @@ CREATE TABLE IF NOT EXISTS dynamic_reupload_request_items (
                             EnsureColumn(conn, tx, "dynamic_aluminum_informations", "uploaded_at", "DATETIME");
                             EnsureColumn(conn, tx, "dynamic_aluminum_informations", "logs", "TEXT");
                             EnsureColumn(conn, tx, "dynamic_upload_data_queues", "reupload_request_count", "INTEGER NOT NULL DEFAULT 0");
-                            EnsureColumn(conn, tx, "dynamic_upload_data_queues", "latest_reupload_operator_code", "TEXT");
                             EnsureColumn(conn, tx, "dynamic_reupload_request_items", "transfer_started_at", "DATETIME");
                             EnsureColumn(conn, tx, "dynamic_reupload_request_items", "review_reason", "TEXT");
                             EnsureColumn(conn, tx, "dynamic_reupload_request_items", "reviewed_at", "DATETIME");
@@ -387,7 +385,7 @@ VALUES
         {
             cmd.Parameters.Add(P("@combine_indication", group.CombineIndication));
             cmd.Parameters.Add(P("@customer_code", group.CustomerCode));
-            cmd.Parameters.Add(P("@customer_name", ""));
+            cmd.Parameters.Add(P("@customer_name", group.CustomerName));
             cmd.Parameters.Add(P("@is_upload_folder", group.IsUploadFolder.HasValue ? (group.IsUploadFolder.Value ? 1 : 0) : (object)DBNull.Value));
             cmd.Parameters.Add(P("@folder_name", group.FolderName));
             cmd.Parameters.Add(P("@sftp_server", group.SftpServer));

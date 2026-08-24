@@ -142,26 +142,19 @@ ORDER BY r.created_at, ri.pkid;";
                 return string.Empty;
 
             return $@"
-WITH ranked_requests AS
-(
-    SELECT
-        r.upload_data_queue_id,
-        r.operator_code,
-        ROW_NUMBER() OVER
-        (
-            PARTITION BY r.upload_data_queue_id
-            ORDER BY r.created_at DESC, r.pkid DESC
-        ) AS recency_rank
-    FROM dynamic_reupload_requests r
-    WHERE r.upload_data_queue_id IN ({string.Join(",", ids)})
-)
 SELECT
-    upload_data_queue_id AS queue_id,
-    COUNT(*) AS reupload_request_count,
-    COALESCE(MAX(CASE WHEN recency_rank = 1 THEN operator_code END), '')
-        AS latest_reupload_operator_code
-FROM ranked_requests
-GROUP BY upload_data_queue_id;";
+    queue.pkid AS queue_id,
+    COUNT(request.pkid) AS reupload_request_count,
+    COALESCE(customer.customer_name, '') AS customer_name
+FROM dynamic_upload_data_queues queue
+LEFT JOIN dynamic_reupload_requests request
+    ON request.upload_data_queue_id = queue.pkid
+LEFT JOIN dynamic_upload_data upload_data
+    ON upload_data.pkid = queue.upload_data_id
+LEFT JOIN define_customers customer
+    ON customer.pkid = upload_data.customer_id
+WHERE queue.pkid IN ({string.Join(",", ids)})
+GROUP BY queue.pkid, customer.customer_name;";
         }
 
         public static bool IsReady(object probeValue)

@@ -56,6 +56,7 @@ namespace AutoUploadQCGate.Models
             if (!string.IsNullOrEmpty(searchText) &&
                 !ContainsIgnoreCase(result.CombineIndication, searchText) &&
                 !ContainsIgnoreCase(result.CustomerCode, searchText) &&
+                !ContainsIgnoreCase(result.CustomerName, searchText) &&
                 !ContainsIgnoreCase(result.Log, searchText))
                 return false;
 
@@ -99,8 +100,8 @@ namespace AutoUploadQCGate.Models
         private int? _reuploadRequestId;
         private int _uploadQuantity;
         private int _reuploadRequestCount;
-        private string _requestedBy;
         private string _customerCode;
+        private string _customerName;
         private bool? _isUploadFolder;
         private bool? _isUseProxy;
         private bool? _isUseKey;
@@ -190,13 +191,13 @@ namespace AutoUploadQCGate.Models
             get => _reuploadRequestCount;
             set { _reuploadRequestCount = value; OnPropertyChanged(nameof(ReuploadRequestCount)); }
         }
-        public string RequestedBy
+        public string CustomerName
         {
-            get => string.IsNullOrWhiteSpace(_requestedBy) ? "-" : _requestedBy;
+            get => string.IsNullOrWhiteSpace(_customerName) ? "-" : _customerName;
             set
             {
-                _requestedBy = value ?? string.Empty;
-                OnPropertyChanged(nameof(RequestedBy));
+                _customerName = value ?? string.Empty;
+                OnPropertyChanged(nameof(CustomerName));
             }
         }
 

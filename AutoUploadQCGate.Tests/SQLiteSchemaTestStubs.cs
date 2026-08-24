@@ -41,6 +41,7 @@ namespace AutoUploadQCGate
             public int QuantityUpload { get; set; }
             public string CombineIndication { get; set; }
             public string CustomerCode { get; set; }
+            public string CustomerName { get; set; }
             public bool? IsUploadFolder { get; set; }
             public bool? IsUseKey { get; set; }
             public bool? IsUseProxy { get; set; }
