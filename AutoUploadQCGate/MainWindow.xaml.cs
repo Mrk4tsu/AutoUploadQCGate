@@ -2136,6 +2136,17 @@ ORDER BY request.created_at DESC, request.pkid_server DESC, item.pkid;");
 
         private void CloseLogDetail_Click(object sender, RoutedEventArgs e)
         {
+            CloseLogDetail();
+        }
+
+        private void LogDetailOverlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.OriginalSource == logDetailOverlay)
+                CloseLogDetail();
+        }
+
+        private void CloseLogDetail()
+        {
             logDetailOverlay.Visibility = Visibility.Collapsed;
         }
 

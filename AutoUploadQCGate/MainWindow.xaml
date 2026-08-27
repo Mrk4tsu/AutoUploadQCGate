@@ -409,8 +409,8 @@
             </StackPanel>
         </Border>
 
-        <Grid x:Name="logDetailOverlay" Grid.RowSpan="5" Background="#800F172A" Panel.ZIndex="100" Visibility="Collapsed">
-            <Border Width="760" Height="470" Background="White" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Padding="0">
+        <Grid x:Name="logDetailOverlay" Grid.RowSpan="5" Background="#800F172A" Panel.ZIndex="100" Visibility="Collapsed" MouseLeftButtonDown="LogDetailOverlay_MouseLeftButtonDown">
+            <Border Width="760" Height="470" Background="White" BorderBrush="#CBD5E1" BorderThickness="1" Padding="0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -418,7 +418,7 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <Border Background="#1769E0" CornerRadius="10,10,0,0" Padding="20,14">
+                    <Border Background="#1769E0" Padding="20,14">
                         <Grid>
                             <TextBlock Text="LOG DETAILS" Foreground="White" FontSize="16" FontWeight="Bold" VerticalAlignment="Center"/>
                             <Button Content="×" HorizontalAlignment="Right" Width="32" Height="28" Padding="0"
