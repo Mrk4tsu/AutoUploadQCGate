@@ -61,8 +61,9 @@ namespace AutoUploadQCGate.Tests
                     cachedSyncQuery.Contains("WHERE r.pkid IN (71)") &&
                     cachedSyncQuery.Contains("request_completed_at") &&
                     cachedSyncQuery.Contains("item_uploaded_at") &&
+                    cachedSyncQuery.Contains("COALESCE(customer.customer_name, '') AS customer_name") &&
                     !cachedSyncQuery.Contains("r.status IN"),
-                    "Request-id sync must retrieve terminal requests without restoring unrelated history.");
+                    "Request-id sync must retrieve terminal requests and their customer without restoring unrelated history.");
                 var missingRequestQuery = ReuploadSchemaCompatibility.BuildCachedDisplaySyncQuery(new[] { 9, 8, 9, 0, -1 });
                 AssertTrue(
                     missingRequestQuery.Contains("WHERE r.pkid IN (8,9)") &&
@@ -134,6 +135,7 @@ namespace AutoUploadQCGate.Tests
                     RequestCompletedAt = completedAt,
                     CombineIndication = "4M002303000B01082",
                     CustomerCode = "C-01",
+                    CustomerName = "UTAC",
                     BagCode = "BAG-1",
                     NumberOfPscOk = 100,
                     ItemStatus = ReuploadDeliveryPolicy.Uploaded,
@@ -158,6 +160,7 @@ namespace AutoUploadQCGate.Tests
             AssertTrue(summaries.Count == 1, "One request must create exactly one display row.");
             AssertTrue(summaries[0].UploadQuantity == 300, "The display row must sum selected bag quantities.");
             AssertEqual(UploadStatusNames.Success, summaries[0].Status, "Uploaded requests must display as Success.");
+            AssertEqual("UTAC", summaries[0].CustomerName, "Reupload history must retain the synchronized customer name.");
             AssertEqual("reupload:71", summaries[0].StableId, "Reupload rows need a request-based stable identity.");
             AssertTrue(summaries[0].Logs.Contains("[BAG-1]") && summaries[0].UploadedAt == completedAt,
                 "Attempt logs and completion time must remain visible.");
@@ -213,6 +216,7 @@ namespace AutoUploadQCGate.Tests
                     AssertTableExists(connection, "dynamic_reupload_request_items");
                     AssertColumnExists(connection, "dynamic_upload_data_queues", "pkid_server");
                     AssertColumnExists(connection, "dynamic_upload_data_queues", "reupload_request_count");
+                    AssertColumnExists(connection, "dynamic_reupload_requests", "customer_name");
                     AssertColumnExists(connection, "dynamic_aluminum_informations", "local_file_path");
                     AssertColumnExists(connection, "dynamic_reupload_request_items", "transfer_started_at");
                     AssertColumnExists(connection, "dynamic_reupload_request_items", "review_reason");
@@ -253,7 +257,23 @@ CREATE TABLE dynamic_upload_data_queues (
     latest_reupload_operator_code TEXT
 );
 INSERT INTO dynamic_upload_data_queues (pkid_server, latest_reupload_operator_code)
-VALUES (2, 'LEGACY-OP');", connection))
+VALUES (2, 'LEGACY-OP');
+CREATE TABLE dynamic_reupload_requests (
+    pkid INTEGER PRIMARY KEY AUTOINCREMENT,
+    pkid_server INTEGER NOT NULL,
+    upload_data_queue_id INTEGER NOT NULL,
+    operator_code TEXT,
+    status TEXT NOT NULL DEFAULT 'Pending',
+    requested_bag_count INTEGER NOT NULL DEFAULT 0,
+    logs TEXT,
+    created_at DATETIME NOT NULL,
+    started_at DATETIME,
+    completed_at DATETIME,
+    updated_at DATETIME NOT NULL
+);
+INSERT INTO dynamic_reupload_requests
+(pkid_server, upload_data_queue_id, status, created_at, updated_at)
+VALUES (71, 7, 'Uploaded', '2026-08-27 09:00:00', '2026-08-27 09:00:00');", connection))
                     {
                         command.ExecuteNonQuery();
                     }
@@ -267,6 +287,7 @@ VALUES (2, 'LEGACY-OP');", connection))
                     connection.Open();
                     AssertColumnExists(connection, "dynamic_upload_data_queues", "reupload_request_count");
                     AssertColumnExists(connection, "dynamic_upload_data_queues", "latest_reupload_operator_code");
+                    AssertColumnExists(connection, "dynamic_reupload_requests", "customer_name");
                     AssertTextScalar(connection, "SELECT latest_reupload_operator_code FROM dynamic_upload_data_queues WHERE pkid_server = 2;", "LEGACY-OP", "An obsolete cache column should remain untouched in existing SQLite databases.");
                 }
 

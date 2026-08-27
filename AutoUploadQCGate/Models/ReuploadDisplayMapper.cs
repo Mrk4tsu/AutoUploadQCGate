@@ -21,6 +21,7 @@ namespace AutoUploadQCGate.Models
         public DateTime? RequestCompletedAt { get; set; }
         public string CombineIndication { get; set; }
         public string CustomerCode { get; set; }
+        public string CustomerName { get; set; }
         public string BagCode { get; set; }
         public int NumberOfPscOk { get; set; }
         public string ItemStatus { get; set; }
@@ -36,6 +37,7 @@ namespace AutoUploadQCGate.Models
         public string StableId { get; set; }
         public string CombineIndication { get; set; }
         public string CustomerCode { get; set; }
+        public string CustomerName { get; set; }
         public int UploadQuantity { get; set; }
         public string Status { get; set; }
         public string Logs { get; set; }
@@ -71,6 +73,7 @@ namespace AutoUploadQCGate.Models
                 StableId = $"reupload:{first.RequestId}",
                 CombineIndication = first.CombineIndication ?? string.Empty,
                 CustomerCode = first.CustomerCode ?? string.Empty,
+                CustomerName = first.CustomerName ?? string.Empty,
                 UploadQuantity = quantity > int.MaxValue ? int.MaxValue : (int)quantity,
                 Status = MapStatus(first.RequestStatus, requestItems.Select(x => x.ItemStatus)),
                 Logs = BuildLogs(first.RequestLogs, requestItems),

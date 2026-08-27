@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS dynamic_reupload_requests (
     pkid_server INTEGER NOT NULL,
     upload_data_queue_id INTEGER NOT NULL,
     operator_code TEXT,
+    customer_name TEXT,
     status TEXT NOT NULL DEFAULT 'Pending',
     requested_bag_count INTEGER NOT NULL DEFAULT 0,
     logs TEXT,
@@ -165,6 +166,7 @@ CREATE TABLE IF NOT EXISTS dynamic_reupload_request_items (
                             EnsureColumn(conn, tx, "dynamic_aluminum_informations", "uploaded_at", "DATETIME");
                             EnsureColumn(conn, tx, "dynamic_aluminum_informations", "logs", "TEXT");
                             EnsureColumn(conn, tx, "dynamic_upload_data_queues", "reupload_request_count", "INTEGER NOT NULL DEFAULT 0");
+                            EnsureColumn(conn, tx, "dynamic_reupload_requests", "customer_name", "TEXT");
                             EnsureColumn(conn, tx, "dynamic_reupload_request_items", "transfer_started_at", "DATETIME");
                             EnsureColumn(conn, tx, "dynamic_reupload_request_items", "review_reason", "TEXT");
                             EnsureColumn(conn, tx, "dynamic_reupload_request_items", "reviewed_at", "DATETIME");

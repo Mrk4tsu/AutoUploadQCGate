@@ -109,11 +109,18 @@ SELECT
     ri.uploaded_at AS item_uploaded_at,
     ri.updated_at AS item_updated_at,
     abi.number_of_psc_ok,
-    r.upload_data_queue_id AS queue_id
+    r.upload_data_queue_id AS queue_id,
+    COALESCE(customer.customer_name, '') AS customer_name
 FROM dynamic_reupload_requests r
 INNER JOIN dynamic_reupload_request_items ri ON ri.reupload_request_id = r.pkid
 INNER JOIN dynamic_aluminum_bag_informations abi
     ON abi.pkid = ri.aluminum_bag_information_id
+LEFT JOIN dynamic_upload_data_queues queue
+    ON queue.pkid = r.upload_data_queue_id
+LEFT JOIN dynamic_upload_data upload_data
+    ON upload_data.pkid = queue.upload_data_id
+LEFT JOIN define_customers customer
+    ON customer.pkid = upload_data.customer_id
 ";
 
         public const string DisplaySyncQuerySql = DisplaySyncBaseSql + @"
