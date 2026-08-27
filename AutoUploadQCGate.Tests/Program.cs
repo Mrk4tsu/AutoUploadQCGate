@@ -60,8 +60,9 @@ namespace AutoUploadQCGate.Tests
                 AssertTrue(
                     cachedSyncQuery.Contains("WHERE r.pkid IN (71)") &&
                     cachedSyncQuery.Contains("request_completed_at") &&
-                    cachedSyncQuery.Contains("item_uploaded_at"),
-                    "Cached terminal requests must be synchronized without restoring unrelated history.");
+                    cachedSyncQuery.Contains("item_uploaded_at") &&
+                    !cachedSyncQuery.Contains("r.status IN"),
+                    "Request-id sync must retrieve terminal requests without restoring unrelated history.");
                 var queueSummaryQuery = ReuploadSchemaCompatibility.BuildQueueSummaryQuery(new[] { 8, 7, 8, 0, -1 });
                 AssertTrue(
                     queueSummaryQuery.Contains("IN (7,8)") &&

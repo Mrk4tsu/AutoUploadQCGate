@@ -822,6 +822,23 @@ WHERE pkid_server = @pkid_server;";
             }
         }
 
+        private void SyncReuploadRequestToLocal(int requestId)
+        {
+            var query = ReuploadSchemaCompatibility.BuildCachedDisplaySyncQuery(new[] { requestId });
+            if (string.IsNullOrWhiteSpace(query))
+                return;
+
+            DataTable table;
+            string errorMessage;
+            if (!msSQL.TryExecuteDataTable(query, out table, out errorMessage))
+            {
+                Global.WriteLogFile("[SyncReuploadRequestToLocal] " + errorMessage);
+                return;
+            }
+
+            UpsertReuploadDataLocal(table);
+        }
+
         private string ResolveLocalSnapshotPath(DataRow row, out bool legacyRecovered)
         {
             legacyRecovered = false;
@@ -936,6 +953,7 @@ ORDER BY pkid;", out value, out errorMessage))
                 {
                     var safeFailureStatus = ReuploadDeliveryPolicy.FailureStatus(false, work.AttemptCount);
                     FinishReuploadItem(work, safeFailureStatus, CombineReuploadLogs(sourceResolution.DiagnosticLog, log), legacyRecovered);
+                    SyncReuploadRequestToLocal(work.RequestId);
                     await UpdateUI();
                     continue;
                 }
@@ -1010,6 +1028,7 @@ ORDER BY pkid;", out value, out errorMessage))
                         "SFTP reported success but the delivery state could not be persisted.",
                         logs.ToString());
                 }
+                SyncReuploadRequestToLocal(work.RequestId);
                 await UpdateUI();
             }
         }
