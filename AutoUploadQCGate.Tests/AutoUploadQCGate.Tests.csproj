@@ -46,6 +46,9 @@
     <Compile Include="..\AutoUploadQCGate\Models\ReuploadSchemaCompatibility.cs">
       <Link>ReuploadSchemaCompatibility.cs</Link>
     </Compile>
+    <Compile Include="..\AutoUploadQCGate\Models\ReuploadSourcePathResolver.cs">
+      <Link>ReuploadSourcePathResolver.cs</Link>
+    </Compile>
     <Compile Include="..\AutoUploadQCGate\common\SQLiteHelper.cs">
       <Link>SQLiteHelper.cs</Link>
     </Compile>

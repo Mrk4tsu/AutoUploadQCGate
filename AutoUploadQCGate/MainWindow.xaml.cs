@@ -875,9 +875,26 @@ LIMIT 1;",
             return System.IO.Path.Combine(localRoot, $"{Conv.atos(row["aluminum_bag_code"])}.txt");
         }
 
+        private string GetCurrentCombineSourceRoot()
+        {
+            object value;
+            string errorMessage;
+            if (!msSQL.TryExecuteScalar(@"
+SELECT TOP (1) combine_indication_path
+FROM dbo.define_general_settings
+ORDER BY pkid;", out value, out errorMessage))
+            {
+                Global.WriteLogFile("[ReuploadSourcePath] Cannot read Combine Emap Log File Path: " + errorMessage);
+                return "";
+            }
+
+            return Conv.atos(value).Trim();
+        }
+
         private async Task ProcessReuploadRequests()
         {
             var table = LoadReuploadWorkTable();
+            var combineSourceRoot = table.Rows.Count > 0 ? GetCurrentCombineSourceRoot() : "";
             foreach (DataRow row in table.Rows)
             {
                 var work = new ReuploadWorkItem
@@ -903,6 +920,14 @@ LIMIT 1;",
 
                 await UpdateUI();
 
+                var sourceResolution = ReuploadSourcePathResolver.Resolve(
+                    work.LocalPath,
+                    work.SourcePath,
+                    combineSourceRoot,
+                    Conv.atos(row["combine_indication"]),
+                    work.BagCode);
+                work.SourcePath = sourceResolution.SourcePath;
+
                 string log;
                 var snapshotHash = work.FileHash;
                 bool archived = SQLiteHelper.EnsureSnapshot(work.SourcePath, work.LocalPath, ref snapshotHash, out log);
@@ -910,7 +935,7 @@ LIMIT 1;",
                 if (!archived)
                 {
                     var safeFailureStatus = ReuploadDeliveryPolicy.FailureStatus(false, work.AttemptCount);
-                    FinishReuploadItem(work, safeFailureStatus, log, legacyRecovered);
+                    FinishReuploadItem(work, safeFailureStatus, CombineReuploadLogs(sourceResolution.DiagnosticLog, log), legacyRecovered);
                     await UpdateUI();
                     continue;
                 }
@@ -943,6 +968,8 @@ LIMIT 1;",
                 };
 
                 var logs = new StringBuilder();
+                if (!string.IsNullOrWhiteSpace(sourceResolution.DiagnosticLog))
+                    logs.AppendLine(sourceResolution.DiagnosticLog);
                 bool success;
                 bool transferStarted = false;
                 Func<bool> markTransferStarted = () =>
@@ -985,6 +1012,15 @@ LIMIT 1;",
                 }
                 await UpdateUI();
             }
+        }
+
+        private static string CombineReuploadLogs(string firstLog, string secondLog)
+        {
+            if (string.IsNullOrWhiteSpace(firstLog))
+                return secondLog ?? "";
+            if (string.IsNullOrWhiteSpace(secondLog))
+                return firstLog;
+            return firstLog.Trim() + Environment.NewLine + secondLog.Trim();
         }
 
         private bool TryClaimReuploadItem(ReuploadWorkItem work)

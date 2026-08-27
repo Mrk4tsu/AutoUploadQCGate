@@ -71,6 +71,7 @@ namespace AutoUploadQCGate.Tests
                     "Queue summaries must count all requests and include the server customer name.");
                 VerifyReuploadDisplayMapping();
                 VerifyReuploadAvailabilityTransitions();
+                VerifyReuploadSourcePathFallback();
                 VerifyFreshCacheSchema();
 
                 Console.WriteLine("Reupload delivery policy, display, and schema checks passed.");
@@ -346,6 +347,71 @@ VALUES (2, 'LEGACY-OP');", connection))
             {
                 if (Convert.ToInt32(command.ExecuteScalar()) != expected)
                     throw new InvalidOperationException(message);
+            }
+        }
+
+        private static void VerifyReuploadSourcePathFallback()
+        {
+            var testRoot = Path.Combine(Path.GetTempPath(), "AutoUploadQCGate-ReuploadSource-" + Guid.NewGuid().ToString("N"));
+            var combineIndication = "4M002303000B01081";
+            var bagCode = "FNJ055820A0FC9";
+            var configuredDirectory = Path.Combine(testRoot, "Destination", combineIndication);
+            var configuredPath = Path.Combine(configuredDirectory, bagCode + ".txt");
+            var oldSourcePath = Path.Combine(testRoot, "Legacy", combineIndication, bagCode + ".txt");
+            var snapshotPath = Path.Combine(testRoot, "Snapshot", bagCode + ".txt");
+
+            Directory.CreateDirectory(configuredDirectory);
+            File.WriteAllText(configuredPath, "current destination file");
+            try
+            {
+                var fallback = ReuploadSourcePathResolver.Resolve(
+                    snapshotPath,
+                    oldSourcePath,
+                    Path.Combine(testRoot, "Destination"),
+                    combineIndication,
+                    bagCode);
+                AssertTrue(
+                    fallback.UsesConfiguredSource && fallback.SourcePath == configuredPath && fallback.DiagnosticLog.Contains("Stored source file not found"),
+                    "A missing legacy source should fall back to the current Combine Emap Log File Path.");
+
+                Directory.CreateDirectory(Path.GetDirectoryName(oldSourcePath));
+                File.WriteAllText(oldSourcePath, "legacy source file");
+                var stored = ReuploadSourcePathResolver.Resolve(
+                    snapshotPath,
+                    oldSourcePath,
+                    Path.Combine(testRoot, "Destination"),
+                    combineIndication,
+                    bagCode);
+                AssertTrue(
+                    !stored.UsesExistingSnapshot && !stored.UsesConfiguredSource && stored.SourcePath == oldSourcePath,
+                    "An existing stored source must take priority over the configured fallback.");
+
+                Directory.CreateDirectory(Path.GetDirectoryName(snapshotPath));
+                File.WriteAllText(snapshotPath, "immutable snapshot");
+                var snapshot = ReuploadSourcePathResolver.Resolve(
+                    snapshotPath,
+                    oldSourcePath,
+                    Path.Combine(testRoot, "Destination"),
+                    combineIndication,
+                    bagCode);
+                AssertTrue(
+                    snapshot.UsesExistingSnapshot && !snapshot.UsesConfiguredSource,
+                    "An existing snapshot must remain the first re-upload source.");
+
+                File.Delete(oldSourcePath);
+                var missing = ReuploadSourcePathResolver.Resolve(
+                    Path.Combine(testRoot, "missing-snapshot.txt"),
+                    oldSourcePath,
+                    Path.Combine(testRoot, "MissingDestination"),
+                    combineIndication,
+                    bagCode);
+                AssertTrue(
+                    missing.DiagnosticLog.Contains("Current Combine Emap Log File Path file not found"),
+                    "A missing fallback must identify the current path that was checked.");
+            }
+            finally
+            {
+                DeleteDirectoryIfPresent(testRoot);
             }
         }
 
