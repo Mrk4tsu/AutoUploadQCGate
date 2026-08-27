@@ -2125,6 +2125,20 @@ ORDER BY request.created_at DESC, request.pkid_server DESC, item.pkid;");
             });
         }
 
+        private void LogDetailButton_Click(object sender, RoutedEventArgs e)
+        {
+            var button = sender as Button;
+            var log = button == null || button.Tag == null ? string.Empty : button.Tag.ToString();
+            txtLogDetail.Text = string.IsNullOrWhiteSpace(log) ? "No log details available." : log;
+            logDetailOverlay.Visibility = Visibility.Visible;
+            txtLogDetail.Focus();
+        }
+
+        private void CloseLogDetail_Click(object sender, RoutedEventArgs e)
+        {
+            logDetailOverlay.Visibility = Visibility.Collapsed;
+        }
+
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
             string appPassword = _appSetting.ApplicationPassword;

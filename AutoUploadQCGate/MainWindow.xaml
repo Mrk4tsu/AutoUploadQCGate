@@ -361,7 +361,23 @@
                                     <TextBlock Grid.Column="1" Text="{Binding UploadQuantity, StringFormat=N0}" Margin="12,9" VerticalAlignment="Center" Foreground="#475569" HorizontalAlignment="Center"/>
                                     <TextBlock Grid.Column="2" Text="{Binding ReuploadRequestCount, StringFormat=N0}" Margin="12,9" VerticalAlignment="Center" Foreground="#475569" HorizontalAlignment="Center"/>
                                     <TextBlock Grid.Column="3" Text="{Binding CustomerName}" Margin="12,9" VerticalAlignment="Center" Foreground="#475569" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding CustomerName}"/>
-                                    <TextBlock Grid.Column="4" Text="{Binding Log}" Margin="12,9" VerticalAlignment="Center" Foreground="#64748B" TextWrapping="Wrap" MaxHeight="54" TextTrimming="CharacterEllipsis" ToolTip="{Binding Log}"/>
+                                    <Button Grid.Column="4"
+                                            Tag="{Binding Log}"
+                                            Margin="0"
+                                            Padding="12,9"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            HorizontalContentAlignment="Stretch"
+                                            VerticalContentAlignment="Center"
+                                            Cursor="Hand"
+                                            ToolTip="Click to view full log"
+                                            Click="LogDetailButton_Click">
+                                        <TextBlock Text="{Binding Log}"
+                                                   Foreground="#64748B"
+                                                   TextWrapping="Wrap"
+                                                   MaxHeight="54"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </Button>
                                     <Border Grid.Column="5" Margin="10,7" VerticalAlignment="Center" HorizontalAlignment="Center" Style="{StaticResource JudgementBadgeStyle}">
                                         <TextBlock Text="{Binding Judgement}" Style="{StaticResource JudgementTextStyle}"/>
                                     </Border>
@@ -392,5 +408,35 @@
                 <TextBlock x:Name="txtNGRecords" Text="0" FontWeight="Bold" FontSize="15" Foreground="#C62828" Margin="7,0,0,0" VerticalAlignment="Center"/>
             </StackPanel>
         </Border>
+
+        <Grid x:Name="logDetailOverlay" Grid.RowSpan="5" Background="#800F172A" Panel.ZIndex="100" Visibility="Collapsed">
+            <Border Width="760" Height="470" Background="White" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Padding="0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Background="#1769E0" CornerRadius="10,10,0,0" Padding="20,14">
+                        <Grid>
+                            <TextBlock Text="LOG DETAILS" Foreground="White" FontSize="16" FontWeight="Bold" VerticalAlignment="Center"/>
+                            <Button Content="×" HorizontalAlignment="Right" Width="32" Height="28" Padding="0"
+                                    Background="Transparent" BorderThickness="0" Foreground="White" FontSize="22"
+                                    Cursor="Hand" Click="CloseLogDetail_Click" ToolTip="Close"/>
+                        </Grid>
+                    </Border>
+
+                    <TextBox x:Name="txtLogDetail" Grid.Row="1" Margin="20" Padding="12"
+                             IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                             Background="#F8FAFC" BorderBrush="#CBD5E1" FontFamily="Consolas" FontSize="13"/>
+
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,0,20,18">
+                        <Button Content="Close" Style="{StaticResource SecondaryButton}" Click="CloseLogDetail_Click"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </Window>
