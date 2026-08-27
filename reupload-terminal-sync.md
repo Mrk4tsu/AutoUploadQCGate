@@ -7,6 +7,7 @@ Store a request in the local cache immediately after the worker finalizes it so 
 ## Tasks
 
 - [x] Add a request-id sync after terminal and review outcomes. → Verify: the sync query retrieves a completed request without an active-status filter.
+- [x] Sync server requests absent from the local cache, including terminal history created before the fix. → Verify: request IDs are deduplicated and loaded in stable batches.
 - [x] Keep the existing batch cache sync for historical requests. → Verify: existing history behavior remains unchanged.
 - [x] Compile the WPF app and run the focused AutoUpload checks. → Verify: both complete successfully.
 

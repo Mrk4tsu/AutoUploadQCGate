@@ -63,6 +63,11 @@ namespace AutoUploadQCGate.Tests
                     cachedSyncQuery.Contains("item_uploaded_at") &&
                     !cachedSyncQuery.Contains("r.status IN"),
                     "Request-id sync must retrieve terminal requests without restoring unrelated history.");
+                var missingRequestQuery = ReuploadSchemaCompatibility.BuildCachedDisplaySyncQuery(new[] { 9, 8, 9, 0, -1 });
+                AssertTrue(
+                    missingRequestQuery.Contains("WHERE r.pkid IN (8,9)") &&
+                    !missingRequestQuery.Contains("r.status IN"),
+                    "Missing terminal requests must be synchronized in a stable batch.");
                 var queueSummaryQuery = ReuploadSchemaCompatibility.BuildQueueSummaryQuery(new[] { 8, 7, 8, 0, -1 });
                 AssertTrue(
                     queueSummaryQuery.Contains("IN (7,8)") &&

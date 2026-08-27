@@ -659,9 +659,45 @@ WHERE pkid = @item_id;",
                 UpsertReuploadDataLocal(cachedTable);
             }
 
+            SyncMissingReuploadRequests(cachedRequestIds);
             SyncReuploadQueueSummaries();
             SetReuploadAvailable();
             await Task.Delay(50);
+        }
+
+        private void SyncMissingReuploadRequests(ICollection<int> cachedRequestIds)
+        {
+            DataTable serverRequestTable;
+            string errorMessage;
+            if (!msSQL.TryExecuteDataTable(
+                    "SELECT pkid FROM dynamic_reupload_requests ORDER BY pkid;",
+                    out serverRequestTable,
+                    out errorMessage))
+            {
+                Global.WriteLogFile("[SyncMissingReuploadRequests] " + errorMessage);
+                return;
+            }
+
+            var cachedIds = new HashSet<int>(cachedRequestIds);
+            var missingRequestIds = serverRequestTable.Rows.Cast<DataRow>()
+                .Select(row => Conv.atoi32(row["pkid"]))
+                .Where(id => id > 0 && !cachedIds.Contains(id))
+                .ToList();
+            const int syncBatchSize = 500;
+
+            for (var offset = 0; offset < missingRequestIds.Count; offset += syncBatchSize)
+            {
+                var query = ReuploadSchemaCompatibility.BuildCachedDisplaySyncQuery(
+                    missingRequestIds.Skip(offset).Take(syncBatchSize));
+                DataTable table;
+                if (!msSQL.TryExecuteDataTable(query, out table, out errorMessage))
+                {
+                    Global.WriteLogFile("[SyncMissingReuploadRequests] " + errorMessage);
+                    return;
+                }
+
+                UpsertReuploadDataLocal(table);
+            }
         }
 
         private void SyncReuploadQueueSummaries()
